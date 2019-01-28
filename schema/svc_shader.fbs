@@ -1,0 +1,65 @@
+namespace service.shader.schema;
+
+enum InputFormat:byte {
+    /// HLSL input
+    Hlsl,
+
+    /// Glsl input
+    Glsl,
+}
+
+enum OutputFormat:byte {
+    /// DXIL output
+    Dxil,
+
+    /// SPIR-V output
+    Spirv,
+
+    /// SPIR-V output (SMOL-V encoded)
+    Smolv,
+
+    /// Text listing output
+    Text,
+
+    /// Binary blob output
+    Blob,
+}
+
+enum Profile:byte {
+    Compute,
+    Geometry,
+    Vertex,
+    Pixel,
+    Hull,
+    Domain,
+    Task,
+    Mesh,
+    RayGen,
+    RayIntersection,
+    RayClosestHit,
+    RayAnyHit,
+    RayMiss,
+}
+
+table Artifact {
+    name:string;
+    input:InputFormat;
+    output:OutputFormat;
+    identity:string;
+    encoding:string;
+    profile:Profile;
+    validated:bool;
+    data:[ubyte];    
+}
+
+table Shader {
+    name:string;
+    entry:string;
+    artifacts:[Artifact];
+}
+
+table Manifest {
+    shaders:[Shader];
+}
+
+root_type Manifest;

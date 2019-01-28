@@ -1,0 +1,25 @@
+# The configuration schema is defined by service.proto file
+# https://github.com/googleapis/googleapis/blob/master/google/api/service.proto
+type: google.api.Service
+config_version: 3
+
+# Name of the service configuration
+name: svc-shader.endpoints.gw-cloud-1.cloud.goog
+
+# API title to appear in the user interface (Google Cloud Console)
+title: Shader Service gRPC API
+apis:
+- name: service.shader
+
+# API usage restrictions
+usage:
+  rules:
+  # Allow unregistered calls for all methods.
+  - selector: "*"
+    allow_unregistered_calls: true
+
+# Regenerate service.pb with:
+# protoc --proto_path=. --include_imports --include_source_info --descriptor_set_out=service.pb service.proto
+
+# Redeploy with:
+# gcloud endpoints services deploy service.pb ../service_esp.yaml

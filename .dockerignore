@@ -1,0 +1,11 @@
+.git
+.cache
+.temp
+.storage
+.transform
+bin
+LICENSE
+README.md
+target/
+tests/
+logs/

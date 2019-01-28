@@ -1,0 +1,26 @@
+syntax = "proto3";
+package drivers.spirv_dis;
+
+import "common.proto";
+
+message DisassembleOptions {
+    /// Colorize output
+    bool colorize = 1;
+
+    /// Don't indent instructions.
+    bool no_indent = 2;
+
+    /// Don't output the header as leading comments.
+    bool no_header = 3;
+
+    /// Show raw Id values instead of friendly names.
+    bool raw_id = 4;
+
+    /// Show byte offsets for each instruction.
+    bool offsets = 5;
+}
+
+message DisassembleRequest {
+    common.StorageIdentity identity = 1;
+    DisassembleOptions options = 2;
+}

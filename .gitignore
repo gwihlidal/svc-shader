@@ -1,0 +1,12 @@
+target/
+.cache/
+.temp/
+.storage/
+.transform/
+.idea/
+.vscode/
+logs/
+*.code-workspace
+*.env
+**/*.rs.bk
+**/*.DS_Store

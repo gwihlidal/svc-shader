@@ -1,0 +1,4 @@
+syntax = "proto3";
+package drivers.rga;
+
+import "common.proto";

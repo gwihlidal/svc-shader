@@ -1,0 +1,359 @@
+syntax = "proto3";
+package drivers.dxc;
+
+import "common.proto";
+
+enum InputFormat {
+    /// HLSL input
+    InputFormat_Hlsl = 0;
+}
+
+enum OutputFormat {
+    /// Generate DXIL code
+    OutputFormat_Dxil = 0;
+
+    /// Generate SPIR-V code
+    OutputFormat_Spirv = 1;
+
+    /// Generate SPIR-V code (SMOL-V encoded)
+    OutputFormat_Smolv = 2;
+}
+
+enum TargetProfile {
+    TargetProfile_Pixel = 0;
+    TargetProfile_Vertex = 1;
+    TargetProfile_Compute = 2;
+    TargetProfile_Geometry = 3;
+    TargetProfile_Domain = 4;
+    TargetProfile_Hull = 5;
+    TargetProfile_RayGen = 6;
+    TargetProfile_RayIntersection = 7;
+    TargetProfile_RayClosestHit = 8;
+    TargetProfile_RayAnyHit = 9;
+    TargetProfile_RayMiss = 10;
+}
+
+enum TargetVersion {
+    /// Shader Model 6.0
+    TargetVersion_V6_0 = 0;
+
+    /// Shader Model 6.1
+    TargetVersion_V6_1 = 1;
+
+    /// Shader Model 6.2
+    TargetVersion_V6_2 = 2;
+
+    /// Shader Model 6.3
+    TargetVersion_V6_3 = 3;
+
+    /// Shader Model 6.4
+    TargetVersion_V6_4 = 4;
+}
+
+enum OptimizationLevel {
+    /// Optimization Disabled
+    OptimizationLevel_Off = 0;
+
+    /// Optimization Level 0
+    OptimizationLevel_Zero = 1;
+
+    /// Optimization Level 1
+    OptimizationLevel_One = 2;
+
+    /// Optimization Level 2
+    OptimizationLevel_Two = 3;
+
+    /// Optimization Level 3 (Default)
+    OptimizationLevel_Three = 4;
+
+    /// Optimization Level 4
+    OptimizationLevel_Four = 5;
+}
+
+enum ValidationLevel {
+    /// Disable validation
+    ValidationLevel_Off = 0;
+
+    /// Default validation
+    ValidationLevel_Default = 1;
+}
+
+enum WarningLevel {
+    WarningLevel_Off = 0;
+    WarningLevel_Default = 1;
+    WarningLevel_Strict = 2;
+}
+
+enum DenormLevel {
+    /// Default
+    DenormLevel_Any = 0;
+    DenormLevel_Preserve = 1;
+    DenormLevel_Ftz = 3;
+}
+
+enum CodeGeneration {
+    /// Disable DXIL output
+    CodeGeneration_Disabled = 0;
+
+    /// Output object file
+    CodeGeneration_Enabled = 1;
+}
+
+enum MatrixPacking {
+    /// Default matrix packing
+    MatrixPacking_Default = 0;
+
+    /// Pack matrices in row-major order
+    MatrixPacking_RowMajor = 1;
+
+    /// Pack matrices in column-major order
+    MatrixPacking_ColumnMajor = 2;
+}
+
+enum SignaturePacking {
+    /// (default) Pack signatures preserving prefix-stable property.
+    /// Appended elements will not disturb placement of prior elements.
+    SignaturePacking_PrefixStable = 0;
+
+    /// Optimize signature packing assuming identical signature provided
+    /// for each connecting stage.
+    SignaturePacking_Optimized = 1;
+}
+
+enum DebugInfo {
+    /// Disable debug information
+    DebugInfo_Disabled = 0;
+
+    /// Write debug information
+    DebugInfo_Enabled = 1;
+}
+
+enum ListingInfo {
+    ListingInfo_Disabled = 0;
+
+    /// Output assembly code listing file
+    ListingInfo_Enabled = 1;
+}
+
+enum FlowControl {
+    /// Default flow control
+    FlowControl_Default = 0;
+
+    /// Prefer flow control constructs
+    FlowControl_Prefer = 1;
+
+    /// Avoid flow control constructs
+    FlowControl_Avoid = 2;
+}
+
+enum HlslVersion {
+    HlslVersion_Edition2016 = 0;
+
+    HlslVersion_Edition2017 = 1;
+
+    /// Default
+    HlslVersion_Edition2018 = 2;
+}
+
+message CompileRequest {
+    common.StorageIdentity identity = 1;
+    CompileOptions options = 2;
+}
+
+message CompileOptions {
+    /// Entry point name
+    string entry_point = 1;
+
+    /// Define macros
+    map<string, string> definitions = 2;
+
+    /// 
+    InputFormat input_format = 3;
+
+    /// 
+    OutputFormat output_format = 4;
+
+    /// 
+    TargetVersion target_version = 5;
+
+    /// Set target profile
+    TargetProfile target_profile = 6;
+
+    /// 
+    OptimizationLevel optimization_level = 7;
+
+    /// HLSL version
+    HlslVersion hlsl_version = 8;
+
+    /// 
+    WarningLevel warning_level = 9;
+
+    /// 
+    ValidationLevel validation_level = 10;
+
+    ///
+    CodeGeneration code_generation = 11;
+
+    /// 
+    DebugInfo debug_info = 12;
+
+    /// 
+    ListingInfo listing_info = 13;
+
+    /// 
+    FlowControl flow_control = 14;
+
+    /// Select denormal value options (any, preserve, ftz). any is the default.
+    DenormLevel denorm = 15;
+
+    MatrixPacking matrix_packing = 16;
+
+    SignaturePacking signature_packing = 17;
+
+    /// Enables agressive flattening
+    bool all_resources_bound = 18;
+
+    /// Enable 16bit types and disable min precision types.
+    /// Available in HLSL 2018 and shader model 6.2.
+    bool enable_16bit_types = 19;
+
+    /// Expand the operands before performing token-pasting operation (fxc behavior).
+    bool legacy_macro_expansion = 20;
+
+    /// Output color coded assembly listings.
+    bool color_coded_listing = 21;
+
+    /// Enable strict mode
+    bool strict_mode = 22;
+
+    /// Force IEEE strictness
+    bool force_ieee = 23;
+
+    /// Show header includes and nesting depth
+    bool output_include_depth = 24;
+
+    /// Display details about the include process.
+    bool output_include_details = 25;
+
+    /// Output hexadecimal literals
+    bool output_hex_literals = 26;
+
+    /// Output instruction numbers in listing.
+    bool output_instruction_numbers = 27;
+
+    /// Output instruction byte offsets in assembly listings
+    bool output_instruction_offsets = 28;
+
+    /// Print the optimizer commands.
+    bool output_optimizer_commands = 29;
+
+    /// Ignore line directives
+    bool ignore_line_directives = 30;
+
+    /// Do not use legacy cbuffer load
+    bool deny_legacy_cbuffer_load = 31;
+
+    /// SPIR-V compile options
+    CompileOptionsSpirv spirv = 32;
+}
+
+enum VulkanVersion {
+    /// Vulkan 1.0 (default)
+    VulkanVersion_Vulkan1_0 = 0;
+
+    /// Vulkan 1.1
+    VulkanVersion_Vulkan1_1 = 1;
+}
+
+enum VulkanResourceLayout {
+    /// Use DirectX memory layout for Vulkan resources
+    VulkanResourceLayout_DX = 0;
+
+    /// Use strict OpenGL std140/std430 memory layout for Vulkan resources
+    VulkanResourceLayout_GL = 1;
+}
+
+enum VulkanBindingType {
+    VulkanBindingType_B = 0;
+    VulkanBindingType_S = 1;
+    VulkanBindingType_T = 2;
+    VulkanBindingType_U = 3;
+}
+
+message VulkanBindingShift {
+    VulkanBindingType binding_type = 1;
+    uint32 shift = 2;
+    uint32 space = 3;
+}
+
+/// Specify Vulkan descriptor set and binding for a specific register
+message VulkanBindingRegister {
+    uint32 type_number = 1;
+    uint32 space = 2;
+    uint32 binding = 3;
+    uint32 set = 4;
+}
+
+/// SPIR-V compilation options
+message CompileOptionsSpirv {
+    /// Specify the target environment
+    VulkanVersion version = 1;
+
+    /// Emit additional SPIR-V instructions to aid reflection
+    bool emit_reflection = 2;
+
+    /// Reciprocate SV_Position.w after reading from stage input in PS
+    /// to accommodate the difference between Vulkan and DirectX.
+    bool dx_position_w = 3;
+
+    /// Negate SV_Position.y before writing to stage output in VS/DS/GS to
+    /// accommodate Vulkan's coordinate system.
+    bool invert_y = 4;
+
+    /// Specify memory layout for Vulkan resources
+    VulkanResourceLayout resource_layout = 5;
+
+    /// Specify Vulkan binding number shifts for type registers
+    repeated VulkanBindingShift binding_shifts = 6;
+
+    /// Specify Vulkan descriptor set and binding for specific registers
+    repeated VulkanBindingRegister binding_registers = 7;
+
+    /// Specify a list of SPIRV-Tools passes to customize optimization
+    /// configuration (see http://khr.io/hlsl2spirv#optimization).
+    repeated string opt_config = 8;
+
+    /// Specify whitelist of debug info category (file -> source -> line, tool)
+    repeated string debug_info = 9;
+
+    /// Specify SPIR-V extensions permitted to use
+    repeated string extensions = 10;
+}
+
+/*
+
+Not Mapped:
+
+    -force_rootsig_ver <profile>
+                          force root signature version (rootsig_1_1 if omitted)
+    -getprivate <file>    Save private data from shader blob
+    -P <value>            Preprocess to file (must be used alone)
+    -Qstrip_debug         Strip debug information from 4_0+ shader bytecode  (must be used with /Fo<file>)
+    -Qstrip_priv          Strip private data from shader bytecode  (must be used with /Fo <file>)
+    -Qstrip_reflect       Strip reflection data from shader bytecode  (must be used with /Fo <file>)
+    -Qstrip_rootsignature Strip root signature data from shader bytecode  (must be used with /Fo <file>)
+    -setprivate <file>    Private data to add to compiled shader blob
+    -setrootsignature <file>
+                        Attach root signature to shader bytecode
+    -verifyrootsignature <file>
+                        Verify shader bytecode with root signature
+    -recompile              recompile from DXIL container with Debug Info or Debug Info bitcode file
+    -rootsig-define <value> Read root signature from a #define
+
+
+    -Vn <name>              Use <name> as variable name in header file
+
+    -Zsb                    Build debug name considering only output binary
+    -Zss                    Build debug name considering source information
+
+*/

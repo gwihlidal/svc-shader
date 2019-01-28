@@ -1,0 +1,8 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '--tag=gcr.io/$PROJECT_ID/svc-shader', '.']
+images: ['gcr.io/$PROJECT_ID/svc-shader']
+
+timeout: 13000s
+options:
+  machineType: 'N1_HIGHCPU_32'

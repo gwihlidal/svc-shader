@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-shader
+  labels:
+      name: "svc-shader"
+      keel.sh/policy: force
+      keel.sh/trigger: poll
+  annotations:
+      # keel.sh/pollSchedule: "@every 10m"
+spec:
+  selector:
+    matchLabels:
+      app: svc-shader
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: svc-shader
+    spec:
+      volumes:
+        - name: esp-service-account-creds
+          secret:
+            secretName: esp-service-account-creds
+      containers:
+      - name: svc-shader
+        image: gwihlidal/svc-shader:1
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+              - SYS_ADMIN
+        lifecycle:
+          postStart:
+            exec:
+              command: ["gcsfuse", "-o", "nonempty", "svc-shader-storage", "/service/data"]
+          preStop:
+            exec:
+              command: ["fusermount", "-u", "/service/data"]
+        resources:
+          requests:
+            memory: 4Gi
+            cpu: 1
+        ports:
+        - containerPort: 63999
+      - name: esp
+        image: gcr.io/endpoints-release/endpoints-runtime:1
+        args: [
+        "--http2_port=9000",  # gRPC
+        "--http_port=9001",   # HTTP
+        "--service=svc-shader.endpoints.gw-cloud-1.cloud.goog",
+        "--rollout_strategy=managed",
+        "--backend=grpc://127.0.0.1:63999",
+        "--service_account_key=/etc/nginx/creds/gw-cloud-1-cb09231df1e9.json",
+        #"--transcoding_always_print_primitive_fields=true", # https://groups.google.com/forum/#!topic/google-cloud-endpoints/DXknPEG_9Wk
+        "--client_max_body_size=0" # Override default max client upload size of 32m - 0 disables checking of client request body size
+        ]
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        volumeMounts:
+            - mountPath: /etc/nginx/creds
+              name: esp-service-account-creds
+              readOnly: true
+      - name: jaeger-agent
+        image: jaegertracing/jaeger-agent
+        ports:
+        - containerPort: 5775
+          protocol: UDP
+        - containerPort: 6831
+          protocol: UDP
+        - containerPort: 6832
+          protocol: UDP
+        - containerPort: 5778
+          protocol: TCP
+        command:
+        - "/go/bin/agent-linux"
+        - "--collector.host-port=infra-jaeger-collector.infra:14267"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-shader
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: svc-shader.wihlidal.cloud.
+  labels:
+    app: svc-shader
+spec:
+  type: LoadBalancer
+  ports:
+  # Port that accepts gRPC and JSON/HTTP2 requests over HTTP.
+  - port: 80
+    targetPort: 9001
+    protocol: TCP
+    name: http2
+  - port: 63999
+    targetPort: 63999
+    protocol: TCP
+    name: grpc
+  - port: 8099
+    targetPort: 9000
+    protocol: TCP
+    name: http
+  selector:
+    app: svc-shader

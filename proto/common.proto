@@ -1,0 +1,22 @@
+syntax = "proto3";
+package common;
+
+message StorageIdentity {
+	string sha256_base58 = 1;
+	//string canonical_path = 2;
+}
+
+message StorageContent {
+	StorageIdentity identity = 1;
+	string encoding = 2;
+	string type = 3;
+	bytes chunk_data = 4;
+	uint64 total_length = 5;
+}
+
+message StorageState {
+	StorageIdentity identity = 1;
+    bool exists = 2;
+    uint64 length = 3;
+    map<string, string> meta_data = 4; 
+}

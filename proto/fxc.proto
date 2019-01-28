@@ -1,0 +1,21 @@
+syntax = "proto3";
+package drivers.fxc;
+
+import "common.proto";
+
+enum InputFormat {
+    InputFormat_Hlsl = 0;
+}
+
+enum OutputFormat {
+    OutputFormat_Dxbc = 0;
+}
+
+message CompileRequest {
+    common.StorageIdentity identity = 1;
+    CompileOptions options = 2;
+}
+
+message CompileOptions {
+    string entry_point = 1;
+}

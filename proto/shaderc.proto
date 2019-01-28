@@ -1,0 +1,300 @@
+syntax = "proto3";
+package drivers.shaderc;
+
+import "common.proto";
+
+enum InputFormat {
+    /// HLSL input
+    InputFormat_Hlsl = 0;
+
+    /// GLSL input
+    InputFormat_Glsl = 1;
+}
+
+enum OutputFormat {
+    /// Generate SPIR-V code
+    OutputFormat_Spirv = 0;
+
+    /// Generate SPIR-V code (SMOL-V encoded)
+    OutputFormat_Smolv = 1;
+}
+
+enum OptimizationLevel {
+    /// Optimization Disabled
+    OptimizationLevel_Off = 0;
+
+    /// Optimize the generated SPIR-V code for smaller size
+    OptimizationLevel_Size = 1;
+
+    /// Optimize the generated SPIR-V code for better performance
+    OptimizationLevel_Perf = 2;
+}
+
+enum WarningLevel {
+    WarningLevel_Off = 0;
+    WarningLevel_Default = 1;
+    WarningLevel_Strict = 2;
+}
+
+enum DebugInfo {
+    /// Disable debug information
+    DebugInfo_Disabled = 0;
+
+    /// Write debug information
+    DebugInfo_Enabled = 1;
+}
+
+enum TargetProfile {
+    TargetProfile_Pixel = 0;
+    TargetProfile_Vertex = 1;
+    TargetProfile_Compute = 2;
+    TargetProfile_Geometry = 3;
+    TargetProfile_Domain = 4;
+    TargetProfile_Hull = 5;
+    TargetProfile_Task = 7;
+    TargetProfile_Mesh = 8;
+    TargetProfile_RayGen = 9;
+    TargetProfile_RayIntersection = 10;
+    TargetProfile_RayClosestHit = 11;
+    TargetProfile_RayAnyHit = 12;
+    TargetProfile_RayMiss = 13;
+}
+
+enum VulkanVersion {
+    /// Vulkan 1.0 (default)
+    VulkanVersion_Vulkan1_0 = 0;
+
+    /// Vulkan 1.1
+    VulkanVersion_Vulkan1_1 = 1;
+}
+
+enum VulkanBindingType {
+    VulkanBindingType_CBuffer = 0;
+    VulkanBindingType_Image = 1;
+    VulkanBindingType_Sampler = 2;
+    VulkanBindingType_Ssbo = 3;
+    VulkanBindingType_Texture = 4;
+    VulkanBindingType_Uav = 5;
+    VulkanBindingType_Ubo = 6;
+}
+
+message VulkanBindingStageBase {
+    VulkanBindingType binding_type = 1;
+    TargetProfile stage = 2;
+    uint32 value = 3;
+}
+
+message VulkanBindingBase {
+    VulkanBindingType binding_type = 1;
+    uint32 value = 2;
+}
+
+message VulkanRegisterStageBase {
+    TargetProfile stage = 1;
+    uint32 reg0 = 2;
+    uint32 set0 = 3;
+    uint32 binding0 = 4;
+}
+
+message VulkanRegisterBase {
+    uint32 reg0 = 1;
+    uint32 set0 = 2;
+    uint32 binding0 = 3;
+}
+
+message CompileRequest {
+    common.StorageIdentity identity = 1;
+    CompileOptions options = 2;
+}
+
+message CompileOptions {
+    /// Entry point name
+    string entry_point = 1;
+
+    /// Define macros
+    map<string, string> definitions = 2;
+
+    /// 
+    InputFormat input_format = 3;
+
+    /// 
+    OutputFormat output_format = 4;
+
+    /// Set target profile
+    TargetProfile target_profile = 5;
+
+    /// Specify the target environment
+    VulkanVersion version = 6;
+
+    /// 
+    OptimizationLevel optimization_level = 7;
+
+    /// 
+    WarningLevel warning_level = 8;
+
+    /// 
+    DebugInfo debug_info = 9;
+
+    /// Automatically assign bindings to uniform variables
+    /// that don't have an explicit 'binding' layout in the
+    /// shader source.
+    bool auto_bind_uniforms = 10;
+
+    /// Automatically assign locations to uniform variables
+    /// that don't have an explicit 'location' layout in the
+    /// shader source.
+    bool auto_map_locations = 11;
+
+    /// Enable extension SPV_GOOGLE_hlsl_functionality1 for
+    /// HLSL compilation.
+    bool hlsl_functionality1 = 12;
+
+    /// Use HLSL IO mappings for bindings.
+    bool hlsl_iomap = 13;
+
+    /// Use HLSL offset rules for packing members of blocks.
+    /// Affects only GLSL.  HLSL rules are always used for HLSL.
+    bool hlsl_offsets = 14;
+
+    /// Version and profile for GLSL input files. Possible values
+    /// are concatenations of version and profile, e.g. 310es,
+    /// 450core, etc.  Ignored for HLSL files.
+    string std = 15;
+
+    /// Sets the lowest automatically assigned binding number
+    /// for a resource type.
+    repeated VulkanBindingBase binding_bases = 16;
+
+    /// Sets the lowest automatically assigned binding number
+    /// for a resource type and shader stage
+    repeated VulkanBindingStageBase binding_stage_bases = 17;
+
+    /// Explicitly sets the descriptor set and binding for
+    /// HLSL resources, by register name.
+    repeated VulkanRegisterBase register_bases = 18;
+
+    /// Explicitly sets the descriptor set and binding for
+    /// HLSL resources, by register name and shader stage.
+    repeated VulkanRegisterStageBase register_stage_bases = 19;
+}
+
+/*
+
+glslc - Compile shaders into SPIR-V
+
+Usage: glslc [options] file...
+
+An input file of - represents standard input.
+
+Options:
+  -c                Only run preprocess, compile, and assemble steps.
+  -Dmacro[=defn]    Add an implicit macro definition.
+  -E                Outputs only the results of the preprocessing step.
+                    Output defaults to standard output.
+  -fauto-bind-uniforms
+                    Automatically assign bindings to uniform variables that
+                    don't have an explicit 'binding' layout in the shader
+                    source.
+  -fauto-map-locations
+                    Automatically assign locations to uniform variables that
+                    don't have an explicit 'location' layout in the shader
+                    source.
+  -fentry-point=<name>
+                    Specify the entry point name for HLSL compilation, for
+                    all subsequent source files.  Default is "main".
+  -fhlsl_functionality1, -fhlsl-functionality1
+                    Enable extension SPV_GOOGLE_hlsl_functionality1 for HLSL
+                    compilation.
+  -fhlsl-iomap      Use HLSL IO mappings for bindings.
+  -fhlsl-offsets    Use HLSL offset rules for packing members of blocks.
+                    Affects only GLSL.  HLSL rules are always used for HLSL.
+  -flimit=<settings>
+                    Specify resource limits. Each limit is specified by a limit
+                    name followed by an integer value.  Tokens should be
+                    separated by whitespace.  If the same limit is specified
+                    several times, only the last setting takes effect.
+  -flimit-file <file>
+                    Set limits as specified in the given file.
+  -fresource-set-binding [stage] <reg0> <set0> <binding0>
+                        [<reg1> <set1> <binding1>...]
+                    Explicitly sets the descriptor set and binding for
+                    HLSL resources, by register name.  Optionally restrict
+                    it to a single stage.
+  -fcbuffer-binding-base [stage] <value>
+                    Same as -fubo-binding-base.
+  -fimage-binding-base [stage] <value>
+                    Sets the lowest automatically assigned binding number for
+                    images.  Optionally only set it for a single shader stage.
+                    For HLSL, the resource register number is added to this
+                    base.
+  -fsampler-binding-base [stage] <value>
+                    Sets the lowest automatically assigned binding number for
+                    samplers  Optionally only set it for a single shader stage.
+                    For HLSL, the resource register number is added to this
+                    base.
+  -fssbo-binding-base [stage] <value>
+                    Sets the lowest automatically assigned binding number for
+                    shader storage buffer objects (SSBO).  Optionally only set
+                    it for a single shader stage.  Only affects GLSL.
+  -ftexture-binding-base [stage] <value>
+                    Sets the lowest automatically assigned binding number for
+                    textures.  Optionally only set it for a single shader stage.
+                    For HLSL, the resource register number is added to this
+                    base.
+  -fuav-binding-base [stage] <value>
+                    For automatically assigned bindings for unordered access
+                    views (UAV), the register number is added to this base to
+                    determine the binding number.  Optionally only set it for
+                    a single shader stage.  Only affects HLSL.
+  -fubo-binding-base [stage] <value>
+                    Sets the lowest automatically assigned binding number for
+                    uniform buffer objects (UBO).  Optionally only set it for
+                    a single shader stage.
+                    For HLSL, the resource register number is added to this
+                    base.
+  -fshader-stage=<stage>
+                    Treat subsequent input files as having stage <stage>.
+                    Valid stages are vertex, vert, fragment, frag, tesscontrol,
+                    tesc, tesseval, tese, geometry, geom, compute, and comp.
+  -g                Generate source-level debug information.
+                    Currently this option has no effect.
+  --help            Display available options.
+  -I <value>        Add directory to include search path.
+  -mfmt=<format>    Output SPIR-V binary code using the selected format. This
+                    option may be specified only when the compilation output is
+                    in SPIR-V binary code form. Available options include bin, c
+                    and num. By default the binary output format is bin.
+  -M                Generate make dependencies. Implies -E and -w.
+  -MM               An alias for -M.
+  -MD               Generate make dependencies and compile.
+  -MF <file>        Write dependency output to the given file.
+  -MT <target>      Specify the target of the rule emitted by dependency
+                    generation.
+  -O                Optimize the generated SPIR-V code for better performance.
+  -Os               Optimize the generated SPIR-V code for smaller size.
+  -O0               Disable optimization.
+  -o <file>         Write output to <file>.
+                    A file name of '-' represents standard output.
+  -std=<value>      Version and profile for GLSL input files. Possible values
+                    are concatenations of version and profile, e.g. 310es,
+                    450core, etc.  Ignored for HLSL files.
+  -S                Only run preprocess and compilation steps.
+  --show-limits     Display available limit names and their default values.
+  --target-env=<environment>
+                    Set the target client environment, and the semantics
+                    of warnings and errors.  An optional suffix can specify
+                    the client version.  Values are:
+                        vulkan1.0       # The default
+                        vulkan1.1
+                        vulkan          # Same as vulkan1.0
+                        opengl4.5
+                        opengl          # Same as opengl4.5
+  --version         Display compiler version information.
+  -w                Suppresses all warning messages.
+  -Werror           Treat all warnings as errors.
+  -x <language>     Treat subsequent input files as having type <language>.
+                    Valid languages are: glsl, hlsl.
+                    For files ending in .hlsl the default is hlsl.
+                    Otherwise the default is glsl.
+
+*/

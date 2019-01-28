@@ -1,0 +1,8 @@
+syntax = "proto3";
+package drivers.sign;
+
+import "common.proto";
+
+message SignRequest {
+	common.StorageIdentity identity = 1;
+}
