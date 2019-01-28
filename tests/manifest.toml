@@ -1,0 +1,707 @@
+[[entries]]
+name = "shaders/SkyBoxVs"
+profile = "vs"
+entry_point = "skyBoxVs"
+entry_file = "shaders/SkyBoxVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SkyBoxPs"
+profile = "ps"
+entry_point = "skyBoxPs"
+entry_file = "shaders/SkyBoxPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowVs"
+profile = "vs"
+entry_point = "shadowVs"
+entry_file = "shaders/ShadowVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VisibilityGs"
+profile = "gs"
+entry_point = "visibilityGs"
+entry_file = "shaders/VisibilityGs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VisibilityVs"
+profile = "vs"
+entry_point = "visibilityVs"
+entry_file = "shaders/VisibilityVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VisibilityPs"
+profile = "ps"
+entry_point = "visibilityPs"
+entry_file = "shaders/VisibilityPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SegmentationVs"
+profile = "vs"
+entry_point = "segmentationVs"
+entry_file = "shaders/SegmentationVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SegmentationPs"
+profile = "ps"
+entry_point = "segmentationPs"
+entry_file = "shaders/SegmentationPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GeometryVs"
+profile = "vs"
+entry_point = "geometryVs"
+entry_file = "shaders/GeometryVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GeometrySkinnedVs"
+profile = "vs"
+entry_point = "geometrySkinnedVs"
+entry_file = "shaders/GeometrySkinnedVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GeometryPs"
+profile = "ps"
+entry_point = "geometryPs"
+entry_file = "shaders/GeometryPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/FinalOutputVs"
+profile = "vs"
+entry_point = "finalOutputVs"
+entry_file = "shaders/FinalOutputVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/FinalOutputPs"
+profile = "ps"
+entry_point = "finalOutputPs"
+entry_file = "shaders/FinalOutputPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/LightingVs"
+profile = "vs"
+entry_point = "lightingVs"
+entry_file = "shaders/LightingVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/LightingPs"
+profile = "ps"
+entry_point = "lightingPs"
+entry_file = "shaders/LightingPs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/FullScreenVs"
+profile = "vs"
+entry_point = "fullScreenVs"
+entry_file = "shaders/FullScreenVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ScreenshotCopyCs"
+profile = "cs"
+entry_point = "screenshotCopyCs"
+entry_file = "shaders/ScreenshotCopyCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/AreaLightCopyCs"
+profile = "cs"
+entry_point = "areaLightCopyCs"
+entry_file = "shaders/AreaLightCopyCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/BloomExtractCs"
+profile = "cs"
+entry_point = "bloomExtractCs"
+entry_file = "shaders/BloomExtractCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/BloomDownsampleCs"
+profile = "cs"
+entry_point = "bloomDownsampleCs"
+entry_file = "shaders/BloomDownsampleCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/BloomBlurCs"
+profile = "cs"
+entry_point = "bloomBlurCs"
+entry_file = "shaders/BloomBlurCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/BloomUpsampleCs"
+profile = "cs"
+entry_point = "bloomUpsampleCs"
+entry_file = "shaders/BloomUpsampleCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/BloomApplyCs"
+profile = "cs"
+entry_point = "bloomApplyCs"
+entry_file = "shaders/BloomApplyCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ExposureAdaptationCs"
+profile = "cs"
+entry_point = "exposureAdaptationCs"
+entry_file = "shaders/ExposureAdaptationCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ImGuiVs"
+profile = "vs"
+entry_point = "ImGuiVs"
+entry_file = "shaders/ImGui.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ImGuiPs"
+profile = "ps"
+entry_point = "ImGuiPs"
+entry_file = "shaders/ImGui.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DiffuseShCoefficientsCs"
+profile = "cs"
+entry_point = "diffuseShCoefficientsCs"
+entry_file = "shaders/DiffuseShCoefficientsCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GenBrdfLutCs"
+profile = "cs"
+entry_point = "genBrdfLutCs"
+entry_file = "shaders/GenBrdfLutCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VelocityCs"
+profile = "cs"
+entry_point = "velocityCs"
+entry_file = "shaders/VelocityCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VelocityReduceCs"
+profile = "cs"
+entry_point = "velocityReduceCs"
+entry_file = "shaders/VelocityReduceCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/VelocityDilateCs"
+profile = "cs"
+entry_point = "velocityDilateCs"
+entry_file = "shaders/VelocityDilateCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/MotionBlurCs"
+profile = "cs"
+entry_point = "motionBlurCs"
+entry_file = "shaders/MotionBlurCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/HiZPyramidCs"
+profile = "cs"
+entry_point = "hiZPyramidCs"
+entry_file = "shaders/HierarchicalZCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/HiZPyramidMipCs"
+profile = "cs"
+entry_point = "hiZPyramidMipCs"
+entry_file = "shaders/HierarchicalZCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ReprojectionMetaExtractCs"
+profile = "cs"
+entry_point = "reprojectionMetaExtractCs"
+entry_file = "shaders/ReprojectionMetaExtractCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TemporalReprojectCs"
+profile = "cs"
+entry_point = "temporalReprojectCs"
+entry_file = "shaders/TemporalReprojectCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TaaCs"
+profile = "cs"
+entry_point = "taaCs"
+entry_file = "shaders/TaaCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GtaoCs"
+profile = "cs"
+entry_point = "gtaoCs"
+entry_file = "shaders/GtaoCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SsrTraceCs"
+profile = "cs"
+entry_point = "ssrTrace"
+entry_file = "shaders/SsrTraceCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GtaoBilateralCs"
+profile = "cs"
+entry_point = "bilateralCs"
+entry_file = "shaders/GtaoBilateralCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/GtaoAccumulateCs"
+profile = "cs"
+entry_point = "accumulateCs"
+entry_file = "shaders/GtaoAccumulateCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/IblReflectionCs"
+profile = "cs"
+entry_point = "iblReflection"
+entry_file = "shaders/IblReflectionCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGridClearCs"
+profile = "cs"
+entry_point = "surfelGridClearCs"
+entry_file = "shaders/SurfelGridClearCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGridCountCs"
+profile = "cs"
+entry_point = "surfelGridCountCs"
+entry_file = "shaders/SurfelGridCountCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGridAllocCs"
+profile = "cs"
+entry_point = "surfelGridAllocCs"
+entry_file = "shaders/SurfelGridAllocCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGridBinCs"
+profile = "cs"
+entry_point = "surfelGridBinCs"
+entry_file = "shaders/SurfelGridBinCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelPositionalUpdateCs"
+profile = "cs"
+entry_point = "surfelPositionalUpdateCs"
+entry_file = "shaders/SurfelPositionalUpdateCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGapDetectCs"
+profile = "cs"
+entry_point = "surfelGapDetectCs"
+entry_file = "shaders/SurfelGapDetectCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelGapFillCs" 
+profile = "cs"
+entry_point = "surfelGapFillCs"
+entry_file = "shaders/SurfelGapFillCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelSpawnFinishCs"
+profile = "cs"
+entry_point = "surfelSpawnFinishCs"
+entry_file = "shaders/SurfelSpawnFinishCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelSpawnUpdateInfoCs"
+profile = "cs"
+entry_point = "surfelSpawnUpdateInfoCs"
+entry_file = "shaders/SurfelSpawnUpdateInfoCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingFilterCs"
+profile = "cs"
+entry_point = "surfelLightingFilterCs"
+entry_file = "shaders/SurfelLightingFilterCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingApplyCs"
+profile = "cs"
+entry_point = "surfelLightingApplyCs"
+entry_file = "shaders/SurfelLightingApplyCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingUpsampleCs"
+profile = "cs"
+entry_point = "surfelLightingUpsampleCs"
+entry_file = "shaders/SurfelLightingUpsampleCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/RtAccumulationCs"
+profile = "cs"
+entry_point = "RaytracingAccumulationCs"
+entry_file = "shaders/RtAccumulationCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ReflectionSampleCs"
+profile = "cs"
+entry_point = "reflectionSampleCs"
+entry_file = "shaders/ReflectionSampleCs.hlsl"
+output = ["dxil", "spirv"]
+compiler = "legacy"
+
+[[entries]]
+name = "shaders/ReflectionMergeCs"
+profile = "cs"
+entry_point = "reflectionMergeCs"
+entry_file = "shaders/ReflectionMergeCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ReflectionFilterCs"
+profile = "cs"
+entry_point = "reflectionFilterCs"
+entry_file = "shaders/ReflectionFilterCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ReflectionFilter2Cs" 
+profile = "cs"
+entry_point = "reflectionFilter2Cs"
+entry_file = "shaders/ReflectionFilter2Cs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ColorPyramidCs"
+profile = "cs"
+entry_point = "colorPyramidCs"
+entry_file = "shaders/ColorPyramidCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/CocDeriveCs"
+profile = "cs"
+entry_point = "cocDeriveCs"
+entry_file = "shaders/CocDeriveCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/CocTemporalAaCs"
+profile = "cs"
+entry_point = "cocTemporalAaCs"
+entry_file = "shaders/CocTemporalAaCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofPyramidClearCs"
+profile = "cs"
+entry_point = "dofPyramidClearCs"
+entry_file = "shaders/DofPyramidClearCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofCountCs"
+profile = "cs"
+entry_point = "dofCountCs"
+entry_file = "shaders/DofCountCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofAllocateCs"
+profile = "cs"
+entry_point = "dofAllocateCs"
+entry_file = "shaders/DofAllocateCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofPyramidAllocateCs"
+profile = "cs"
+entry_point = "dofPyramidAllocateCs"
+entry_file = "shaders/DofPyramidAllocateCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofBinCs"
+profile = "cs"
+entry_point = "dofBinCs"
+entry_file = "shaders/DofBinCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofPyramidSplatCs"
+profile = "cs"
+entry_point = "dofPyramidSplatCs"
+entry_file = "shaders/DofPyramidSplatCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/DofGatherCs"
+profile = "cs"
+entry_point = "dofGatherCs"
+entry_file = "shaders/DofGatherCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SVGFReprojectCs"
+profile = "cs"
+entry_point = "SVGFReprojectCs"
+entry_file = "shaders/SVGFReprojectCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SVGFAtrousCs"
+profile = "cs"
+entry_point = "SVGFAtrousCs"
+entry_file = "shaders/SVGFAtrousCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowMaskPackCs"
+profile = "cs"
+entry_point = "shadowMaskPackCs"
+entry_file = "shaders/ShadowMaskPackUnpackCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowMaskUnpackCs"
+profile = "cs"
+entry_point = "shadowMaskUnpackCs"
+entry_file = "shaders/ShadowMaskPackUnpackCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowFilterReprojectCs"
+profile = "cs"
+entry_point = "ShadowFilterReprojectCs"
+entry_file = "shaders/ShadowFilterReprojectCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowFilterBlurCs"
+profile = "cs"
+entry_point = "ShadowFilterBlurCs"
+entry_file = "shaders/ShadowFilterBlurCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowFilterComputeVarianceCs"
+profile = "cs"
+entry_point = "ShadowFilterComputeVarianceCs"
+entry_file = "shaders/ShadowFilterComputeVarianceCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TextureSpaceVs"
+profile = "vs"
+entry_point = "textureSpaceVs"
+entry_file = "shaders/TextureSpaceVs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TextureSpacePs"
+profile = "ps"
+entry_point = "textureSpacePs"
+entry_file = "shaders/TextureSpacePs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TextureSpaceDilationCs"
+profile = "cs"
+entry_point = "textureSpaceDilationCs"
+entry_file = "shaders/TextureSpaceDilationCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TextureSpaceAccumulationCs"
+profile = "cs"
+entry_point = "textureSpaceAccumulationCs"
+entry_file = "shaders/TextureSpaceAccumulationCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/PrimaryRayGen"
+profile = "rgen"
+entry_point = "primaryRaygen"
+entry_file = "shaders/RtPrimaryRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ReflectionRayGen"
+profile = "rgen"
+entry_point = "reflectionRaygen"
+entry_file = "shaders/RtReflectionRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowRayGen"
+profile = "rgen"
+entry_point = "shadowRaygen"
+entry_file = "shaders/RtShadowRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/RtAORayGen"
+profile = "rgen"
+entry_point = "rtAORaygen"
+entry_file = "shaders/RtAORayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingRayGen"
+profile = "rgen"
+entry_point = "surfelLightingRaygen"
+entry_file = "shaders/RtSurfelLightingRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingCopyTextureCs"
+profile = "cs"
+entry_point = "copyToTexture"
+entry_file = "shaders/SurfelLightingCopyTexture.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SurfelLightingCopyBufferCs"
+profile = "cs"
+entry_point = "copyToBuffer"
+entry_file = "shaders/SurfelLightingCopyTexture.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/PrimaryMiss"
+profile = "miss"
+entry_point = "primaryMiss"
+entry_file = "shaders/RtPrimaryRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/ShadowMiss"
+profile = "miss"
+entry_point = "shadowMiss"
+entry_file = "shaders/RtShadowRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TrianglePrimaryHit"
+profile = "chit"
+entry_point = "trianglePrimaryHit"
+entry_file = "shaders/RtSurfaceInteractions.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TriangleShadowHit"
+profile = "chit"
+entry_point = "triangleShadowHit"
+entry_file = "shaders/RtShadowRayGen.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/SkinningCs"
+profile = "cs"
+entry_point = "skinningCs"
+entry_file = "shaders/SkinningCs.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TranslucencyRayGen" 
+profile = "rgen" 
+entry_point = "translucencyRaygen" 
+entry_file = "shaders/RtTranslucencyRayGen.hlsl" 
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TranslucencyHit"
+profile = "chit"
+entry_point = "translucencyHit"
+entry_file = "shaders/RtSurfaceInteractions.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/TranslucentShadowHit"
+profile = "chit"
+entry_point = "translucentShadowHit"
+entry_file = "shaders/RtSurfaceInteractions.hlsl"
+output = ["dxil", "spirv"]
+
+[[entries]]
+name = "shaders/MeshletDepthCs"
+profile = "cs"
+entry_point = "main"
+entry_file = "shaders/MeshletDepthCs.glsl"
+output = ["spirv"]
+
+[[entries]]
+name = "shaders/MeshletCullCs"
+profile = "cs"
+entry_point = "main"
+entry_file = "shaders/MeshletCullCs.glsl"
+output = ["spirv"]
+
+[[entries]]
+name = "shaders/MeshletCullTs"
+profile = "task_6_3"
+entry_point = "main"
+entry_file = "shaders/MeshletCullTs.glsl"
+output = ["spirv"]
+
+[[entries]]
+name = "shaders/MeshletCullMs"
+profile = "mesh_6_3"
+entry_point = "main"
+entry_file = "shaders/MeshletCullMs.glsl"
+output = ["spirv"]
+
+[[entries]]
+name = "shaders/MeshletCullVs"
+profile = "vs"
+entry_point = "main"
+entry_file = "shaders/MeshletCullVs.glsl"
+output = ["spirv"]
+
+[[entries]]
+name = "shaders/MeshletCullPs"
+profile = "ps"
+entry_point = "main"
+entry_file = "shaders/MeshletCullPs.glsl"
+output = ["spirv"]
