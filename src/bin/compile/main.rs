@@ -228,8 +228,8 @@ fn process() -> Result<()> {
         };
         let mut entry_graph = include_merkle::IncludeNodeGraph::new();
         let entry_node =
-            include_merkle::traverse_build(&mut entry_graph, &base_path, &canonical_path, 0);
-        include_merkle::traverse_patch(&mut entry_graph, entry_node);
+            include_merkle::traverse_build(&mut entry_graph, &base_path, &canonical_path, 0, true /* normalize endings */);
+        include_merkle::traverse_patch(&mut entry_graph, entry_node, true /* normalize endings */);
         include_merkle::graph_to_node_vec(&entry_graph)
             .iter()
             .for_each(|node| {

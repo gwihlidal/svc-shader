@@ -194,13 +194,13 @@ impl Compiler {
 
         args.push(input_path.to_string_lossy().to_string());
 
-        let mut output = Command::new(command);
-        output.current_dir(&working_dir);
+        let mut command_call = Command::new(&command);
+        command_call.current_dir(&working_dir);
         for arg in &args {
-            output.arg(arg);
+            command_call.arg(arg);
         }
 
-        let output = output.output();
+        let output = command_call.output();
         match output {
             Ok(ref output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
@@ -235,9 +235,11 @@ impl Compiler {
                     Ok((output_data, stdout.to_string()))
                 } else {
                     Err(Error::process(format!(
-                        "failed to run command - details: {:?} - {:?}",
+                        "failed to run command - details: {:?} - {:?} - command was: {}, args: {:?}",
                         stdout.to_string(),
-                        stderr.to_string()
+                        stderr.to_string(),
+                        command,
+                        args,
                     )))
                 }
             }
