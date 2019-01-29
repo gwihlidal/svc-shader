@@ -140,14 +140,14 @@ impl Compiler {
         dxc::SignaturePacking::from_i32(self.options.signature_packing).unwrap()
     }
 
-    pub fn define<'a>(&'a mut self, name: String, value: String) -> &'a mut Compiler {
+    pub fn define<'a>(&'_ mut self, name: String, value: String) -> &'_ mut Compiler {
         self.options.definitions.insert(name, value);
         self
     }
 
     pub fn include_path<'a>(&'a mut self, include_path: &Path) -> &'a mut Compiler {
         let include_path =
-            utilities::string_from_path(&include_path).unwrap_or("PATH_ERROR".to_string());
+            utilities::string_from_path(&include_path).unwrap_or_else(|| "PATH_ERROR".to_string());
         self.include_paths.push(include_path);
         self
     }
@@ -247,6 +247,7 @@ impl Compiler {
         }
     }
 
+    #[allow(clippy::cyclomatic_complexity)]
     fn cmd_args(&self) -> Vec<String> {
         let mut args = Vec::new();
 

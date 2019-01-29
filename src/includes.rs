@@ -34,7 +34,7 @@ pub fn parse_includes(input: &str) -> Vec<IncludeReference> {
         let range_text = &input[range_start..range_end];
         let range_caps = ABSOLUTE_PATH_REGEX.captures(range_text).unwrap();
         let include_path = range_caps.get(1).map_or("", |m| m.as_str());
-        if include_path.len() > 0 {
+        if !include_path.is_empty() {
             references.push(IncludeReference {
                 include_path: include_path.to_owned(),
                 range_start,
@@ -52,7 +52,7 @@ pub fn parse_includes(input: &str) -> Vec<IncludeReference> {
         let range_text = range_text.trim().trim_matches('\n');
         let range_caps = RELATIVE_PATH_REGEX.captures(range_text).unwrap();
         let include_path = range_caps.get(1).map_or("", |m| m.as_str());
-        if include_path.len() > 0 {
+        if !include_path.is_empty() {
             references.push(IncludeReference {
                 include_path: include_path.to_owned(),
                 range_start,
@@ -95,11 +95,11 @@ pub fn parse_includes_recursive(
 }
 
 pub fn path_resolve(
-    references: &Vec<IncludeReference>,
+    references: &[IncludeReference],
     root_dir: &Path,
     file_dir: &Path,
 ) -> Vec<IncludeReference> {
-    let mut result = references.clone();
+    let mut result = references.to_owned();
     for reference in &mut result {
         let parent_path = if reference.relative_path {
             file_dir
@@ -130,22 +130,22 @@ pub fn path_resolve(
     result
 }
 
-pub fn path_dedup(references: &Vec<IncludeReference>) -> Vec<IncludeReference> {
+pub fn path_dedup(references: &[IncludeReference]) -> Vec<IncludeReference> {
     // Assume all paths have been expanded to their absolute form
-    let mut result = references.clone();
+    let mut result = references.to_owned();
     result.sort_by(|a, b| a.include_path.cmp(&b.include_path));
     result.dedup_by(|a, b| a.include_path.eq(&b.include_path));
     result
 }
 
-pub fn range_sort(references: &Vec<IncludeReference>) -> Vec<IncludeReference> {
-    let mut result = references.clone();
+pub fn range_sort(references: &[IncludeReference]) -> Vec<IncludeReference> {
+    let mut result = references.to_owned();
     result.sort_by(|a, b| a.range_start.cmp(&b.range_start));
     result
 }
 
-pub fn range_sort_rev(references: &Vec<IncludeReference>) -> Vec<IncludeReference> {
-    let mut result = references.clone();
+pub fn range_sort_rev(references: &[IncludeReference]) -> Vec<IncludeReference> {
+    let mut result = references.to_owned();
     result.sort_by(|a, b| b.range_start.cmp(&a.range_start));
     result
 }
@@ -156,9 +156,9 @@ pub fn get_references(text: &str, root_dir: &Path, file_dir: &Path) -> Vec<Inclu
     range_sort(&path_dedup(&resolved_references))
 }
 
-pub fn strip_base(root_dir: &Path, references: &Vec<IncludeReference>) -> Vec<IncludeReference> {
+pub fn strip_base(root_dir: &Path, references: &[IncludeReference]) -> Vec<IncludeReference> {
     let prefix = root_dir.canonicalize().unwrap();
-    let mut result = references.clone();
+    let mut result = references.to_owned();
     for reference in &mut result {
         let include_path = Path::new(&reference.include_path);
         let include_path = include_path.strip_prefix(&prefix).unwrap();

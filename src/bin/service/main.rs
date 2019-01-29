@@ -175,22 +175,14 @@ impl proto::service::server::Shader for ServiceBackend {
                         upload_context.writer = Some(Cursor::new(Vec::with_capacity(
                             request.total_length as usize,
                         )));
-                        match &upload_context.writer {
-                            None => {
-                                panic!("Writer should be allocated!");
-                            }
-                            _ => {}
-                        }
+                        assert!(upload_context.writer.is_some());
                         upload_context.content_encoding = request.encoding.clone();
                         upload_context.content_type = request.type_.clone();
                     }
 
                     if let Some(writer) = &mut upload_context.writer {
-                        match writer.write(&request.chunk_data) {
-                            Err(err) => {
-                                println!("Error occurred writing chunk bytes! {}", err);
-                            }
-                            _ => {}
+                        if let Err(err) = writer.write(&request.chunk_data) {
+                            println!("Error occurred writing chunk bytes! {}", err);
                         }
                     }
 
@@ -407,12 +399,12 @@ fn make_process_error(name: &str, message: &str) -> proto::service::ProcessOutpu
     }
 }
 
-fn run_service(backend: Box<ServiceBackend>, port: u16) {
+fn run_service(backend: ServiceBackend, port: u16) {
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
     println!("Shader build service listening on: {}", addr);
     let bind = TcpListener::bind(&addr).expect("bind");
 
-    let new_service = proto::service::server::ShaderServer::new(*backend);
+    let new_service = proto::service::server::ShaderServer::new(backend);
     let mut h2_settings = h2::server::Builder::new();
     if OPTIMAL_WINDOWING {
         h2_settings.initial_window_size(65536 * 2048); // for an RPC
@@ -440,7 +432,7 @@ fn run_service(backend: Box<ServiceBackend>, port: u16) {
 fn main() {
     use dotenv;
     dotenv::from_filename("service.env").expect("Failed to read .env file");
-    drop(env_logger::init());
+    env_logger::init();
 
     println!(
         "Initializing shader build service [version: {} - identity: {}]",
@@ -473,11 +465,11 @@ fn main() {
         Err(_) => "./.temp".to_string(),
     };
 
-    if wine_path.len() > 0 {
+    if !wine_path.is_empty() {
         println!("WINE_PATH: {}", wine_path);
     }
 
-    if vulkan_path.len() > 0 {
+    if !vulkan_path.is_empty() {
         println!("VULKAN_PATH: {}", vulkan_path);
     }
 
@@ -538,7 +530,7 @@ fn main() {
     println!("TEMP_PATH: {:?}", &context.temp_path);
 
     // Create service backend
-    let backend = Box::new(ServiceBackend { context: context });
+    let backend = ServiceBackend { context };
 
     // Launch the service!
     run_service(backend, 63999);

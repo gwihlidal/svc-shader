@@ -123,7 +123,7 @@ fn main() {
             message.push_str(&causation);
             message.push_str(": ");
             message.push_str(&cause.to_string());
-            count_context = count_context + 1;
+            count_context += 1;
         }
         if count_context != 0 {
             message.push_str("\n");
@@ -153,6 +153,7 @@ struct ShaderRecord {
     artifacts: Vec<ShaderArtifact>,
 }
 
+#[allow(clippy::cyclomatic_complexity)]
 fn process() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
 
@@ -229,7 +230,7 @@ fn process() -> Result<()> {
                 Some(ref defines) => defines
                     .iter()
                     .map(|define| {
-                        let define_parts = define.split("=").collect::<Vec<&str>>();
+                        let define_parts = define.split('=').collect::<Vec<&str>>();
                         if define_parts.len() == 2 {
                             (define_parts[0].to_string(), define_parts[1].to_string())
                         } else if define_parts.len() == 1 {
@@ -382,10 +383,10 @@ fn process() -> Result<()> {
                 output_identity,
                 result.name
             );
-            if result.output.len() > 0 {
+            if !result.output.is_empty() {
                 trace!("   ---\nOutput:\n---\n{}", result.output);
             }
-            if result.errors.len() > 0 {
+            if !result.errors.is_empty() {
                 error!("   ---\nErrors:\n---\n{}", result.errors);
             }
 
@@ -396,7 +397,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Dxil,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             } else if result.name == "Listing" {
@@ -406,7 +407,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Text,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             } else if result.name == "Debug" {
@@ -416,7 +417,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Blob,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             }
@@ -620,10 +621,10 @@ fn process() -> Result<()> {
                 output_identity,
                 result.name
             );
-            if result.output.len() > 0 {
+            if !result.output.is_empty() {
                 trace!("   ---\nOutput:\n---\n{}", result.output);
             }
-            if result.errors.len() > 0 {
+            if !result.errors.is_empty() {
                 error!("   ---\nErrors:\n---\n{}", result.errors);
             }
 
@@ -634,7 +635,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Spirv,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             } else if result.name == "Listing" {
@@ -644,7 +645,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Text,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             }
@@ -745,10 +746,10 @@ fn process() -> Result<()> {
                 output_identity,
                 result.name
             );
-            if result.output.len() > 0 {
+            if !result.output.is_empty() {
                 trace!("   ---\nOutput:\n---\n{}", result.output);
             }
-            if result.errors.len() > 0 {
+            if !result.errors.is_empty() {
                 error!("   ---\nErrors:\n---\n{}", result.errors);
             }
 
@@ -759,7 +760,7 @@ fn process() -> Result<()> {
                     output: schema::OutputFormat::Spirv,
                     identity: output_identity.to_owned(),
                     encoding: String::from("identity"),
-                    profile: artifact_profile.clone(),
+                    profile: artifact_profile,
                     validated: false,
                 });
             }
@@ -807,7 +808,7 @@ fn process() -> Result<()> {
 
     if process_opt.download || (process_opt.output.is_some() && process_opt.embed) {
         for record in &records {
-            if record.artifacts.len() > 0 {
+            if !record.artifacts.is_empty() {
                 debug!("Artifacts:[{}] - Entry:[{}]", record.name, record.entry);
             }
             for artifact in &record.artifacts {
@@ -855,70 +856,67 @@ fn process() -> Result<()> {
         }
     }
 
-    match process_opt.output {
-        Some(ref output_path) => {
-            let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
-            let manifest_shaders: Vec<_> = records
-                .iter()
-                .map(|shader| {
-                    let name = Some(manifest_builder.create_string(&shader.name));
-                    let entry = Some(manifest_builder.create_string(&shader.entry));
-                    let artifacts: Vec<_> = shader
-                        .artifacts
-                        .iter()
-                        .map(|artifact| {
-                            let name = Some(manifest_builder.create_string(&artifact.name));
-                            let identity = Some(manifest_builder.create_string(&artifact.identity));
-                            let encoding = Some(manifest_builder.create_string(&artifact.encoding));
-                            let data = if process_opt.embed {
-                                let data = fetch_from_cache(cache_path, &artifact.identity)
-                                    .expect("failed to fetch from cache");
-                                Some(manifest_builder.create_vector(&data))
-                            } else {
-                                None
-                            };
-                            schema::Artifact::create(
-                                &mut manifest_builder,
-                                &schema::ArtifactArgs {
-                                    name,
-                                    input: artifact.input,
-                                    output: artifact.output,
-                                    identity,
-                                    encoding,
-                                    profile: artifact.profile,
-                                    validated: artifact.validated,
-                                    data,
-                                },
-                            )
-                        })
-                        .collect();
-                    let artifacts = Some(manifest_builder.create_vector(&artifacts));
-                    schema::Shader::create(
-                        &mut manifest_builder,
-                        &schema::ShaderArgs {
-                            name,
-                            entry,
-                            artifacts,
-                        },
-                    )
-                })
-                .collect();
+    if let Some(ref output_path) = process_opt.output {
+        let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
+        let manifest_shaders: Vec<_> = records
+            .iter()
+            .map(|shader| {
+                let name = Some(manifest_builder.create_string(&shader.name));
+                let entry = Some(manifest_builder.create_string(&shader.entry));
+                let artifacts: Vec<_> = shader
+                    .artifacts
+                    .iter()
+                    .map(|artifact| {
+                        let name = Some(manifest_builder.create_string(&artifact.name));
+                        let identity = Some(manifest_builder.create_string(&artifact.identity));
+                        let encoding = Some(manifest_builder.create_string(&artifact.encoding));
+                        let data = if process_opt.embed {
+                            let data = fetch_from_cache(cache_path, &artifact.identity)
+                                .expect("failed to fetch from cache");
+                            Some(manifest_builder.create_vector(&data))
+                        } else {
+                            None
+                        };
+                        schema::Artifact::create(
+                            &mut manifest_builder,
+                            &schema::ArtifactArgs {
+                                name,
+                                input: artifact.input,
+                                output: artifact.output,
+                                identity,
+                                encoding,
+                                profile: artifact.profile,
+                                validated: artifact.validated,
+                                data,
+                            },
+                        )
+                    })
+                    .collect();
+                let artifacts = Some(manifest_builder.create_vector(&artifacts));
+                schema::Shader::create(
+                    &mut manifest_builder,
+                    &schema::ShaderArgs {
+                        name,
+                        entry,
+                        artifacts,
+                    },
+                )
+            })
+            .collect();
 
-            let manifest_shaders = Some(manifest_builder.create_vector(&manifest_shaders));
-            let manifest = schema::Manifest::create(
-                &mut manifest_builder,
-                &schema::ManifestArgs {
-                    shaders: manifest_shaders,
-                },
-            );
+        let manifest_shaders = Some(manifest_builder.create_vector(&manifest_shaders));
+        let manifest = schema::Manifest::create(
+            &mut manifest_builder,
+            &schema::ManifestArgs {
+                shaders: manifest_shaders,
+            },
+        );
 
-            manifest_builder.finish(manifest, None);
-            let manifest_data = manifest_builder.finished_data();
-            let manifest_file = File::create(output_path)?;
-            let mut manifest_writer = BufWriter::new(manifest_file);
-            manifest_writer.write_all(&manifest_data)?;
-        }
-        None => {}
+        manifest_builder.finish(manifest, None);
+        let manifest_data = manifest_builder.finished_data();
+        let manifest_file = File::create(output_path)?;
+        let mut manifest_writer = BufWriter::new(manifest_file);
+        manifest_writer.write_all(&manifest_data)?;
     }
 
     Ok(())
@@ -1057,10 +1055,6 @@ fn _compress_test() -> Result<()> {
     let bincode_len = bincode.len() as f32;
     //let smolv_len = smolv.len() as f32;
 
-    println!(
-        "Identity is {}% smaller than Identity",
-        (identity_len - identity_len) / identity_len * 100f32
-    );
     println!(
         "Deflate is {}% smaller than Identity",
         (identity_len - deflate_len) / identity_len * 100f32

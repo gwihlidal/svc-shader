@@ -26,7 +26,7 @@ pub fn parse_dxc_profile(input: &str) -> drivers::dxc::TargetProfile {
 pub fn parse_dxc_profile_version(
     input: &str,
 ) -> (drivers::dxc::TargetProfile, drivers::dxc::TargetVersion) {
-    let parts = input.split("_").collect::<Vec<&str>>();
+    let parts = input.split('_').collect::<Vec<&str>>();
     if parts.len() == 3 {
         let profile = parse_dxc_profile(&parts[0]);
         let version = match parts[1] {
@@ -83,7 +83,7 @@ pub fn parse_glslc_profile_version(
     drivers::shaderc::TargetProfile,
     drivers::shaderc::VulkanVersion,
 ) {
-    let parts = input.split("_").collect::<Vec<&str>>();
+    let parts = input.split('_').collect::<Vec<&str>>();
     if parts.len() == 3 {
         let profile = parse_glslc_profile(&parts[0]);
         let version = match parts[1] {

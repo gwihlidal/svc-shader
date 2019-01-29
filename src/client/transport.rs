@@ -44,10 +44,9 @@ pub fn query_missing_identities(identities: &[String]) -> Result<Vec<String>> {
     let query_requests: Vec<StorageIdentity> = identities
         .iter()
         .map(|identity| {
-            let request = StorageIdentity {
+            StorageIdentity {
                 sha256_base58: identity.to_string(),
-            };
-            request
+            }
         })
         .collect();
     let query_request_stream = futures::stream::iter_ok(query_requests);
@@ -223,23 +222,15 @@ pub fn download_identity(identity: &str) -> Result<Vec<u8>> {
                     download_context.writer = Some(std::io::Cursor::new(Vec::with_capacity(
                         content_part.total_length as usize,
                     )));
-                    match &download_context.writer {
-                        None => {
-                            panic!("Writer should be allocated!");
-                        }
-                        _ => {}
-                    }
+                    assert!(download_context.writer.is_some());
                     download_context.content_encoding = content_part.encoding.clone();
                     download_context.content_type = content_part.type_.clone();
                     download_context.total_length = content_part.total_length as usize;
                 }
 
                 if let Some(writer) = &mut download_context.writer {
-                    match writer.write(&content_part.chunk_data) {
-                        Err(err) => {
-                            error!("Error occurred writing chunk bytes! {}", err);
-                        }
-                        _ => {}
+                    if let Err(err) = writer.write(&content_part.chunk_data) {
+                        error!("Error occurred writing chunk bytes! {}", err);
                     }
                 }
             }
@@ -308,7 +299,7 @@ pub fn compile_dxc(
     });
 
     let request = drivers::dxc::CompileRequest {
-        identity: identity,
+        identity,
         options: Some(options),
     };
 
@@ -357,7 +348,7 @@ pub fn compile_glslc(
     });
 
     let request = drivers::shaderc::CompileRequest {
-        identity: identity,
+        identity,
         options: Some(options),
     };
 

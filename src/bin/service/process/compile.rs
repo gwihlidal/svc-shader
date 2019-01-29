@@ -85,7 +85,7 @@ pub fn compile_shaderc(
 
             let mut glslc_results: Vec<(String /* name */, String /* identity */)> = Vec::new();
 
-            if glslc_output.0.code.len() > 0 {
+            if !glslc_output.0.code.is_empty() {
                 let code_identity = compute_data_identity(&glslc_output.0.code);
                 let code_path = storage_path.join(&code_identity.txt);
                 let code_file = File::create(&code_path);
@@ -199,7 +199,7 @@ pub fn compile_dxc(
 
             let mut dxc_results: Vec<(String /* name */, String /* identity */)> = Vec::new();
 
-            if dxc_output.0.code.len() > 0 {
+            if !dxc_output.0.code.is_empty() {
                 let code_identity = compute_data_identity(&dxc_output.0.code);
                 let code_path = storage_path.join(&code_identity.txt);
                 let code_file = File::create(&code_path);
@@ -219,7 +219,7 @@ pub fn compile_dxc(
                 dxc_results.push(("Code".to_string(), code_identity.txt));
             }
 
-            if dxc_output.0.listing.len() > 0 {
+            if !dxc_output.0.listing.is_empty() {
                 let listing_identity = compute_data_identity(&dxc_output.0.listing);
                 let listing_path = storage_path.join(&listing_identity.txt);
                 let listing_file = File::create(&listing_path);
@@ -239,7 +239,7 @@ pub fn compile_dxc(
                 dxc_results.push(("Listing".to_string(), listing_identity.txt));
             }
 
-            if dxc_output.0.debug.len() > 0 {
+            if !dxc_output.0.debug.is_empty() {
                 let debug_identity = compute_data_identity(&dxc_output.0.debug);
                 let debug_path = storage_path.join(&debug_identity.txt);
                 let debug_file = File::create(&debug_path);

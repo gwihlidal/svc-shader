@@ -56,7 +56,7 @@ pub fn disassemble_spirv(
 
             let mut dis_results: Vec<(String /* name */, String /* identity */)> = Vec::new();
 
-            if dis_output.0.len() > 0 {
+            if !dis_output.0.is_empty() {
                 let dis_identity = compute_data_identity(&dis_output.0);
                 let dis_path = storage_path.join(&dis_identity.txt);
                 let dis_file = File::create(&dis_path);

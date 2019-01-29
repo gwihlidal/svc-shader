@@ -156,7 +156,7 @@ impl TempDir {
     }
 
     pub fn as_str(&self) -> String {
-        string_from_path(&self.path).unwrap_or("PATH_ERROR".to_string())
+        string_from_path(&self.path).unwrap_or_else(|| "PATH_ERROR".to_string())
     }
 
     pub fn exists(&self) -> bool {
@@ -202,7 +202,7 @@ impl TempFile {
     }
 
     pub fn as_str(&self) -> String {
-        string_from_path(&self.path).unwrap_or("PATH_ERROR".to_string())
+        string_from_path(&self.path).unwrap_or_else(|| "PATH_ERROR".to_string())
     }
 
     pub fn exists(&self) -> bool {

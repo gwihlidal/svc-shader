@@ -84,14 +84,14 @@ impl Compiler {
         shaderc::OutputFormat::from_i32(self.options.output_format).unwrap()
     }
 
-    pub fn define<'a>(&'a mut self, name: String, value: String) -> &'a mut Compiler {
+    pub fn define<'a>(&'_ mut self, name: String, value: String) -> &'_ mut Compiler {
         self.options.definitions.insert(name, value);
         self
     }
 
     pub fn include_path<'a>(&'a mut self, include_path: &Path) -> &'a mut Compiler {
         let include_path =
-            utilities::string_from_path(&include_path).unwrap_or("PATH_ERROR".to_string());
+            utilities::string_from_path(&include_path).unwrap_or_else(|| "PATH_ERROR".to_string());
         self.include_paths.push(include_path);
         self
     }
@@ -122,7 +122,7 @@ impl Compiler {
 
         args.push(format!(
             "-fshader-stage={}",
-            profile_to_string(&self.target_profile())
+            profile_to_string(self.target_profile())
         ));
 
         args.push(
@@ -212,7 +212,7 @@ impl Compiler {
                 shaderc::VulkanBindingType::Uav => args.push("-fuav-binding-base".to_string()),
                 shaderc::VulkanBindingType::Ubo => args.push("-fubo-binding-base".to_string()),
             }
-            args.push(profile_to_string(&stage).to_string());
+            args.push(profile_to_string(stage).to_string());
             args.push(format!("{}", binding_stage_base.value));
         }
 
@@ -226,7 +226,7 @@ impl Compiler {
         for register_stage_base in &self.options.register_stage_bases {
             let stage = shaderc::TargetProfile::from_i32(register_stage_base.stage).unwrap();
             args.push("-fresource-set-binding".to_string());
-            args.push(profile_to_string(&stage).to_string());
+            args.push(profile_to_string(stage).to_string());
             args.push(format!("{}", register_stage_base.reg0));
             args.push(format!("{}", register_stage_base.set0));
             args.push(format!("{}", register_stage_base.binding0));
@@ -305,7 +305,7 @@ impl Compiler {
     }
 }
 
-pub fn profile_to_string(profile: &shaderc::TargetProfile) -> &'static str {
+pub fn profile_to_string(profile: shaderc::TargetProfile) -> &'static str {
     match profile {
         shaderc::TargetProfile::Pixel => "frag",
         shaderc::TargetProfile::Vertex => "vert",
