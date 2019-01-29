@@ -9,7 +9,7 @@ name: svc-shader.endpoints.gw-cloud-1.cloud.goog
 # API title to appear in the user interface (Google Cloud Console)
 title: Shader Service gRPC API
 apis:
-- name: service.shader
+- name: service.Shader
 
 # API usage restrictions
 usage:
