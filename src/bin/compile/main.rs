@@ -69,6 +69,18 @@ struct Options {
     /// Validate artifacts
     #[structopt(short = "a", long = "validate")]
     validate: bool,
+
+    /// Service remote endpoint (defaults to 127.0.0.1:63999)
+    #[structopt(short = "e", long = "endpoint")]
+    endpoint: Option<String>,
+
+    /// Windowing size
+    #[structopt(short = "w", long = "window_size")]
+    window_size: Option<u32>,
+
+    /// Connection windowing size
+    #[structopt(short = "n", long = "connection_window_size")]
+    connection_window_size: Option<u32>,
 }
 
 fn cache_hit(cache_path: &Path, identity: &str) -> bool {
@@ -180,6 +192,16 @@ fn process() -> Result<()> {
 
     std::fs::create_dir_all(cache_path)?;
 
+    let config = transport::Config {
+        address: if let Some(ref endpoint) = process_opt.endpoint {
+            endpoint.to_owned()
+        } else {
+            "127.0.0.1:63999".to_string()
+        },
+        window_size: process_opt.window_size,
+        connection_window_size: process_opt.connection_window_size,
+    };
+
     // Load shader manifest from toml path
     let manifest = load_manifest(&base_path, &process_opt.input.as_path())?;
 
@@ -268,13 +290,14 @@ fn process() -> Result<()> {
     active_identities.dedup_by(|a, b| a.eq(&b));
 
     // Query what identities are missing from the remote endpoint.
-    let missing_identities = transport::query_missing_identities(&active_identities)?;
+    let missing_identities = transport::query_missing_identities(&config, &active_identities)?;
 
     // Upload missing identities to the remote endpoint.
     for missing_identity in &missing_identities {
         info!("Uploading missing identity: {}", missing_identity);
         let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
-        let uploaded_identity = transport::upload_identity(&missing_identity, &identity_data)?;
+        let uploaded_identity =
+            transport::upload_identity(&config, &missing_identity, &identity_data)?;
         assert_eq!(missing_identity, &uploaded_identity);
     }
 
@@ -371,7 +394,7 @@ fn process() -> Result<()> {
             drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
         };
 
-        let results = transport::compile_dxc(&identity, options)?;
+        let results = transport::compile_dxc(&config, &identity, options)?;
         for result in &results {
             let output_identity = if let Some(ref identity) = &result.identity {
                 identity.sha256_base58.clone()
@@ -609,7 +632,7 @@ fn process() -> Result<()> {
             drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
         };
 
-        let results = transport::compile_dxc(&identity, options)?;
+        let results = transport::compile_dxc(&config, &identity, options)?;
         for result in &results {
             let output_identity = if let Some(ref identity) = &result.identity {
                 identity.sha256_base58.clone()
@@ -734,7 +757,7 @@ fn process() -> Result<()> {
             drivers::shaderc::TargetProfile::RayMiss => schema::Profile::RayMiss,
         };
 
-        let results = transport::compile_glslc(&identity, options)?;
+        let results = transport::compile_glslc(&config, &identity, options)?;
         for result in &results {
             let output_identity = if let Some(ref identity) = &result.identity {
                 identity.sha256_base58.clone()
@@ -778,7 +801,7 @@ fn process() -> Result<()> {
                             // Artifact with unsigned DXIL
                             let unsigned_identity = artifact.identity.to_owned();
                             info!("Signing DXIL: {}", &unsigned_identity);
-                            let signed_results = transport::sign_dxil(&unsigned_identity)?;
+                            let signed_results = transport::sign_dxil(&config, &unsigned_identity)?;
                             if signed_results.len() != 1 {
                                 return Err(Error::bug("failed to sign dxil - invalid results"));
                             }
@@ -840,7 +863,7 @@ fn process() -> Result<()> {
                 let identity_path = cache_path.join(&artifact.identity);
 
                 if cache_miss(cache_path, &artifact.identity) {
-                    let remote_data = transport::download_identity(&artifact.identity)?;
+                    let remote_data = transport::download_identity(&config, &artifact.identity)?;
                     cache_if_missing(cache_path, &artifact.identity, &remote_data)?;
                     debug!(
                         "  {} -> {} '{}' [Cache Miss]: {:?}",

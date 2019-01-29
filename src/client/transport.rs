@@ -20,11 +20,25 @@ use tower_h2::client;
 use tower_http::add_origin;
 use tower_util::MakeService;
 
-struct EndPoint;
+pub struct Config {
+    pub address: String,
+    pub window_size: Option<u32>,
+    pub connection_window_size: Option<u32>,
+}
 
-// TODO: Remove hardcoding
-static ADDRESS: &'static str = "127.0.0.1:63999";
-static OPTIMAL_WINDOWING: bool = false;
+struct EndPoint {
+    address: std::net::SocketAddr,
+}
+
+impl EndPoint {
+    pub fn new(address: &str) -> Self {
+        EndPoint {
+            address: address
+                .parse::<std::net::SocketAddr>()
+                .expect("invalid address"),
+        }
+    }
+}
 
 impl tokio_connect::Connect for EndPoint {
     type Connected = tokio::net::tcp::TcpStream;
@@ -32,32 +46,34 @@ impl tokio_connect::Connect for EndPoint {
     type Future = tokio::net::tcp::ConnectFuture;
 
     fn connect(&self) -> Self::Future {
-        // TODO: Remove hardcoding
-        let address = ADDRESS
-            .parse::<std::net::SocketAddr>()
-            .expect("invalid address");
-        tokio::net::tcp::TcpStream::connect(&address)
+        tokio::net::tcp::TcpStream::connect(&self.address)
     }
 }
 
-pub fn query_missing_identities(identities: &[String]) -> Result<Vec<String>> {
+pub fn query_missing_identities(config: &Config, identities: &[String]) -> Result<Vec<String>> {
     let query_requests: Vec<StorageIdentity> = identities
         .iter()
-        .map(|identity| {
-            StorageIdentity {
-                sha256_base58: identity.to_string(),
-            }
+        .map(|identity| StorageIdentity {
+            sha256_base58: identity.to_string(),
         })
         .collect();
     let query_request_stream = futures::stream::iter_ok(query_requests);
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
     let mut h2_settings = h2::client::Builder::default();
-    if OPTIMAL_WINDOWING {
-        h2_settings.initial_window_size(65536 * 2048); // for an RPC
-        h2_settings.initial_connection_window_size(65536 * 2048); // for a connection
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
     }
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
@@ -100,7 +116,7 @@ pub fn query_missing_identities(identities: &[String]) -> Result<Vec<String>> {
     }
 }
 
-pub fn upload_identity(identity: &str, data: &[u8]) -> Result<String> {
+pub fn upload_identity(config: &Config, identity: &str, data: &[u8]) -> Result<String> {
     let meta_request = StorageContent {
         identity: Some(StorageIdentity {
             sha256_base58: identity.to_string(),
@@ -131,9 +147,21 @@ pub fn upload_identity(identity: &str, data: &[u8]) -> Result<String> {
 
     let upload_request_stream = futures::stream::iter_ok(upload_requests);
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
-    let h2_settings = Default::default();
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    let mut h2_settings = h2::client::Builder::default();
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
+    }
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
@@ -160,7 +188,7 @@ pub fn upload_identity(identity: &str, data: &[u8]) -> Result<String> {
     }
 }
 
-pub fn download_identity(identity: &str) -> Result<Vec<u8>> {
+pub fn download_identity(config: &Config, identity: &str) -> Result<Vec<u8>> {
     trace!("Downloading: {}", identity);
 
     let request = DownloadRequest {
@@ -170,13 +198,21 @@ pub fn download_identity(identity: &str) -> Result<Vec<u8>> {
         encoding: "identity".to_string(),
     };
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
     let mut h2_settings = h2::client::Builder::default();
-    if OPTIMAL_WINDOWING {
-        h2_settings.initial_window_size(65536 * 2048); // for an RPC
-        h2_settings.initial_connection_window_size(65536 * 2048); // for a connection
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
     }
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
@@ -250,16 +286,28 @@ pub fn download_identity(identity: &str) -> Result<Vec<u8>> {
     }
 }
 
-pub fn sign_dxil(identity: &str) -> Result<Vec<ProcessOutput>> {
+pub fn sign_dxil(config: &Config, identity: &str) -> Result<Vec<ProcessOutput>> {
     let request = drivers::sign::SignRequest {
         identity: Some(StorageIdentity {
             sha256_base58: identity.to_string(),
         }),
     };
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
-    let h2_settings = Default::default();
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    let mut h2_settings = h2::client::Builder::default();
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
+    }
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
@@ -291,6 +339,7 @@ pub fn sign_dxil(identity: &str) -> Result<Vec<ProcessOutput>> {
 }
 
 pub fn compile_dxc(
+    config: &Config,
     identity: &str,
     options: drivers::dxc::CompileOptions,
 ) -> Result<Vec<ProcessOutput>> {
@@ -303,9 +352,21 @@ pub fn compile_dxc(
         options: Some(options),
     };
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
-    let h2_settings = Default::default();
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    let mut h2_settings = h2::client::Builder::default();
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
+    }
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
@@ -340,6 +401,7 @@ pub fn compile_dxc(
 }
 
 pub fn compile_glslc(
+    config: &Config,
     identity: &str,
     options: drivers::shaderc::CompileOptions,
 ) -> Result<Vec<ProcessOutput>> {
@@ -352,9 +414,21 @@ pub fn compile_glslc(
         options: Some(options),
     };
 
-    let uri: Uri = format!("http://{}", ADDRESS).parse().unwrap();
-    let h2_settings = Default::default();
-    let mut make_client = client::Connect::new(EndPoint, h2_settings, DefaultExecutor::current());
+    let mut h2_settings = h2::client::Builder::default();
+    if let Some(window_size) = config.window_size {
+        h2_settings.initial_window_size(window_size); // for an RPC
+    }
+    if let Some(connection_window_size) = config.connection_window_size {
+        h2_settings.initial_connection_window_size(connection_window_size); // for a connection
+    }
+
+    let uri: Uri = format!("http://{}", &config.address).parse().unwrap();
+
+    let mut make_client = client::Connect::new(
+        EndPoint::new(&config.address),
+        h2_settings,
+        DefaultExecutor::current(),
+    );
     let rg = make_client
         .make_service(())
         .map(move |conn| {
