@@ -1,1 +1,1 @@
-cargo run --bin compile -- -i tests/manifest.toml -x -d -a -b tests/data
+cargo run --release --bin compile -- --input tests/manifest.toml --debug --download --parallel --base tests/data/CodeGenHLSL/Samples/MiniEngine
