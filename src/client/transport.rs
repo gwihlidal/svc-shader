@@ -20,6 +20,7 @@ use tower_h2::client;
 use tower_http::add_origin;
 use tower_util::MakeService;
 
+#[derive(Debug, Clone)]
 pub struct Config {
     pub address: String,
     pub window_size: Option<u32>,

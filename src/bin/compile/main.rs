@@ -18,6 +18,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::path::PathBuf;
+use scoped_threadpool::Pool;
 use structopt::StructOpt;
 use svc_shader::client::transport;
 use svc_shader::compile::*;
@@ -25,6 +26,7 @@ use svc_shader::encoding::{decode_data, encode_data, Encoding};
 use svc_shader::error::{Error, Result};
 use svc_shader::proto::drivers;
 use svc_shader::utilities::{self, path_exists, read_file};
+use std::sync::{RwLock, Arc};
 
 mod generated;
 use crate::generated::service::shader::schema;
@@ -71,7 +73,7 @@ struct Options {
     validate: bool,
 
     /// Service remote endpoint (defaults to 127.0.0.1:63999)
-    #[structopt(short = "e", long = "endpoint")]
+    #[structopt(short = "t", long = "endpoint")]
     endpoint: Option<String>,
 
     /// Windowing size
@@ -81,6 +83,10 @@ struct Options {
     /// Connection windowing size
     #[structopt(short = "n", long = "connection_window_size")]
     connection_window_size: Option<u32>,
+
+    /// Parallel compilation
+    #[structopt(short = "p", long = "parallel")]
+    parallel: bool,
 }
 
 fn cache_hit(cache_path: &Path, identity: &str) -> bool {
@@ -165,7 +171,506 @@ struct ShaderRecord {
     artifacts: Vec<ShaderArtifact>,
 }
 
-#[allow(clippy::cyclomatic_complexity)]
+fn compile_hlsl_to_dxil(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+    if entry.language != "hlsl" {
+        // Not an HLSL source file
+        return Ok(());
+    }
+
+    if entry.output.iter().find(|name| name == &"dxil").is_none() {
+        // DXIL output is not requested for this entry point
+        return Ok(());
+    }
+
+    info!(
+        "Compiling '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+        entry.profile,
+        entry.name,
+        entry.entry_point,
+        &cache_path.join(&entry.identity),
+        entry.defines,
+    );
+
+    let mut define_map: HashMap<String, String> = HashMap::new();
+    entry.defines.iter().for_each(|(name, value)| {
+        define_map.insert(name.to_string(), value.to_string());
+    });
+
+    let (target_profile, target_version) = parse_dxc_profile_version(entry.profile.as_ref());
+    let options = drivers::dxc::CompileOptions {
+        entry_point: entry.entry_point.clone(),
+        definitions: define_map,
+        input_format: drivers::dxc::InputFormat::Hlsl as i32,
+        output_format: drivers::dxc::OutputFormat::Dxil as i32,
+        target_version: target_version as i32,
+        target_profile: target_profile as i32,
+        optimization_level: drivers::dxc::OptimizationLevel::Two as i32,
+        hlsl_version: drivers::dxc::HlslVersion::Edition2018 as i32,
+        warning_level: drivers::dxc::WarningLevel::Default as i32,
+        validation_level: drivers::dxc::ValidationLevel::Default as i32,
+        code_generation: drivers::dxc::CodeGeneration::Enabled as i32,
+        debug_info: drivers::dxc::DebugInfo::Enabled as i32,
+        listing_info: drivers::dxc::ListingInfo::Enabled as i32,
+        flow_control: drivers::dxc::FlowControl::Default as i32,
+        denorm: drivers::dxc::DenormLevel::Any as i32,
+        matrix_packing: drivers::dxc::MatrixPacking::Default as i32,
+        signature_packing: drivers::dxc::SignaturePacking::PrefixStable as i32,
+        all_resources_bound: false,
+        enable_16bit_types: false,
+        legacy_macro_expansion: false,
+        color_coded_listing: true,
+        strict_mode: false,
+        force_ieee: false,
+        output_include_depth: false,
+        output_include_details: false,
+        output_hex_literals: false,
+        output_instruction_numbers: false,
+        output_instruction_offsets: false,
+        output_optimizer_commands: false,
+        ignore_line_directives: false,
+        deny_legacy_cbuffer_load: true,
+        spirv: None,
+    };
+
+    let mut record = ShaderRecord {
+        name: entry.name.to_owned(),
+        entry: entry.entry_point.clone(),
+        artifacts: Vec::new(),
+    };
+
+    let artifact_profile = match target_profile {
+        drivers::dxc::TargetProfile::Pixel => schema::Profile::Pixel,
+        drivers::dxc::TargetProfile::Vertex => schema::Profile::Vertex,
+        drivers::dxc::TargetProfile::Compute => schema::Profile::Compute,
+        drivers::dxc::TargetProfile::Geometry => schema::Profile::Geometry,
+        drivers::dxc::TargetProfile::Domain => schema::Profile::Domain,
+        drivers::dxc::TargetProfile::Hull => schema::Profile::Hull,
+        drivers::dxc::TargetProfile::RayGen => schema::Profile::RayGen,
+        drivers::dxc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
+        drivers::dxc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
+        drivers::dxc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
+        drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
+    };
+
+    let results = transport::compile_dxc(&config, &entry.identity, options)?;
+    for result in &results {
+        let output_identity = if let Some(ref identity) = &result.identity {
+            identity.sha256_base58.clone()
+        } else {
+            String::new()
+        };
+        trace!(
+            "   DXC output received - identity:{}, name:{}",
+            output_identity,
+            result.name
+        );
+        if !result.output.is_empty() {
+            trace!("   ---\nOutput:\n---\n{}", result.output);
+        }
+        if !result.errors.is_empty() {
+            error!("   ---\nErrors:\n---\n{}", result.errors);
+        }
+
+        if result.name == "Code" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Hlsl,
+                output: schema::OutputFormat::Dxil,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        } else if result.name == "Listing" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Hlsl,
+                output: schema::OutputFormat::Text,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        } else if result.name == "Debug" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Hlsl,
+                output: schema::OutputFormat::Blob,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        }
+    }
+
+    let mut records = records.write().unwrap();
+    records.push(record);
+    Ok(())
+}
+
+fn compile_hlsl_to_spirv(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+    if entry.language != "hlsl" {
+        // Not an HLSL source file
+        return Ok(());
+    }
+
+    if entry.output.iter().find(|name| name == &"spirv").is_none() {
+        // SPIR-V output is not requested for this entry point
+        return Ok(());
+    }
+
+    info!(
+        "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+        entry.profile,
+        entry.name,
+        entry.entry_point,
+        &cache_path.join(&entry.identity),
+        entry.defines,
+    );
+
+    let mut define_map: HashMap<String, String> = HashMap::new();
+    entry.defines.iter().for_each(|(name, value)| {
+        define_map.insert(name.to_string(), value.to_string());
+    });
+
+    let (target_profile, target_version) = parse_dxc_profile_version(entry.profile.as_ref());
+    let options = drivers::dxc::CompileOptions {
+        entry_point: entry.entry_point.clone(),
+        definitions: define_map,
+        input_format: drivers::dxc::InputFormat::Hlsl as i32,
+        output_format: drivers::dxc::OutputFormat::Spirv as i32,
+        target_version: target_version as i32,
+        target_profile: target_profile as i32,
+        optimization_level: drivers::dxc::OptimizationLevel::Two as i32,
+        hlsl_version: drivers::dxc::HlslVersion::Edition2018 as i32,
+        warning_level: drivers::dxc::WarningLevel::Default as i32,
+        validation_level: drivers::dxc::ValidationLevel::Default as i32,
+        code_generation: drivers::dxc::CodeGeneration::Enabled as i32,
+        debug_info: drivers::dxc::DebugInfo::Enabled as i32,
+        listing_info: drivers::dxc::ListingInfo::Enabled as i32,
+        flow_control: drivers::dxc::FlowControl::Default as i32,
+        denorm: drivers::dxc::DenormLevel::Any as i32,
+        matrix_packing: drivers::dxc::MatrixPacking::Default as i32,
+        signature_packing: drivers::dxc::SignaturePacking::PrefixStable as i32,
+        all_resources_bound: false,
+        enable_16bit_types: false,
+        legacy_macro_expansion: false,
+        color_coded_listing: true,
+        strict_mode: false,
+        force_ieee: false,
+        output_include_depth: false,
+        output_include_details: false,
+        output_hex_literals: false,
+        output_instruction_numbers: false,
+        output_instruction_offsets: false,
+        output_optimizer_commands: false,
+        ignore_line_directives: false,
+        deny_legacy_cbuffer_load: true,
+        spirv: Some(drivers::dxc::CompileOptionsSpirv {
+            version: drivers::dxc::VulkanVersion::Vulkan11 as i32,
+            emit_reflection: true,
+            dx_position_w: false,
+            invert_y: false,
+            resource_layout: drivers::dxc::VulkanResourceLayout::Dx as i32,
+            binding_shifts: vec![
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::B as i32,
+                    shift: 0,
+                    space: 0,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::S as i32,
+                    shift: 1000,
+                    space: 0,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::T as i32,
+                    shift: 2000,
+                    space: 0,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::U as i32,
+                    shift: 3000,
+                    space: 0,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::B as i32,
+                    shift: 0,
+                    space: 1,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::S as i32,
+                    shift: 1000,
+                    space: 1,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::T as i32,
+                    shift: 2000,
+                    space: 1,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::U as i32,
+                    shift: 3000,
+                    space: 1,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::B as i32,
+                    shift: 0,
+                    space: 2,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::S as i32,
+                    shift: 1000,
+                    space: 2,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::T as i32,
+                    shift: 2000,
+                    space: 2,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::U as i32,
+                    shift: 3000,
+                    space: 2,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::B as i32,
+                    shift: 0,
+                    space: 3,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::S as i32,
+                    shift: 1000,
+                    space: 3,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::T as i32,
+                    shift: 2000,
+                    space: 3,
+                },
+                drivers::dxc::VulkanBindingShift {
+                    binding_type: drivers::dxc::VulkanBindingType::U as i32,
+                    shift: 3000,
+                    space: 3,
+                },
+            ],
+            binding_registers: Vec::new(),
+            opt_config: Vec::new(),
+            debug_info: Vec::new(),
+            extensions: Vec::new(),
+        }),
+    };
+
+    let mut record = ShaderRecord {
+        name: entry.name.to_owned(),
+        entry: entry.entry_point.clone(),
+        artifacts: Vec::new(),
+    };
+
+    let artifact_profile = match target_profile {
+        drivers::dxc::TargetProfile::Pixel => schema::Profile::Pixel,
+        drivers::dxc::TargetProfile::Vertex => schema::Profile::Vertex,
+        drivers::dxc::TargetProfile::Compute => schema::Profile::Compute,
+        drivers::dxc::TargetProfile::Geometry => schema::Profile::Geometry,
+        drivers::dxc::TargetProfile::Domain => schema::Profile::Domain,
+        drivers::dxc::TargetProfile::Hull => schema::Profile::Hull,
+        drivers::dxc::TargetProfile::RayGen => schema::Profile::RayGen,
+        drivers::dxc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
+        drivers::dxc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
+        drivers::dxc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
+        drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
+    };
+
+    let results = transport::compile_dxc(&config, &entry.identity, options)?;
+    for result in &results {
+        let output_identity = if let Some(ref identity) = &result.identity {
+            identity.sha256_base58.clone()
+        } else {
+            String::new()
+        };
+        trace!(
+            "   DXC output received - identity:{}, name:{}",
+            output_identity,
+            result.name
+        );
+        if !result.output.is_empty() {
+            trace!("   ---\nOutput:\n---\n{}", result.output);
+        }
+        if !result.errors.is_empty() {
+            error!("   ---\nErrors:\n---\n{}", result.errors);
+        }
+
+        if result.name == "Code" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Hlsl,
+                output: schema::OutputFormat::Spirv,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        } else if result.name == "Listing" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Hlsl,
+                output: schema::OutputFormat::Text,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        }
+    }
+
+    let mut records = records.write().unwrap();
+    records.push(record);
+    Ok(())
+}
+
+fn compile_glsl_to_spirv(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+    if entry.language != "glsl" {
+        // Not a GLSL source file
+        return Ok(());
+    }
+
+    if entry.output.iter().find(|name| name == &"spirv").is_none() {
+        // SPIR-V output is not requested for this entry point
+        return Ok(());
+    }
+
+    info!(
+        "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:?}",
+        entry.profile,
+        entry.name,
+        entry.entry_point,
+        &cache_path.join(&entry.identity),
+        entry.defines,
+    );
+
+    let mut define_map: HashMap<String, String> = HashMap::new();
+    entry.defines.iter().for_each(|(name, value)| {
+        define_map.insert(name.to_string(), value.to_string());
+    });
+
+    let (target_profile, vulkan_version) = parse_glslc_profile_version(entry.profile.as_ref());
+    let options = drivers::shaderc::CompileOptions {
+        entry_point: entry.entry_point.clone(),
+        definitions: define_map,
+        input_format: drivers::shaderc::InputFormat::Glsl as i32,
+        output_format: drivers::shaderc::OutputFormat::Spirv as i32,
+        target_profile: target_profile as i32,
+        version: vulkan_version as i32,
+        optimization_level: drivers::shaderc::OptimizationLevel::Perf as i32,
+        warning_level: drivers::shaderc::WarningLevel::Default as i32,
+        debug_info: drivers::shaderc::DebugInfo::Enabled as i32,
+        auto_bind_uniforms: true,
+        auto_map_locations: true,
+        hlsl_functionality1: true,
+        hlsl_iomap: true,
+        hlsl_offsets: true,
+        std: String::new(),
+        binding_bases: Vec::new(),
+        binding_stage_bases: Vec::new(),
+        register_bases: Vec::new(),
+        register_stage_bases: Vec::new(),
+    };
+
+    let mut record = ShaderRecord {
+        name: entry.name.to_owned(),
+        entry: entry.entry_point.clone(),
+        artifacts: Vec::new(),
+    };
+
+    let artifact_profile = match target_profile {
+        drivers::shaderc::TargetProfile::Pixel => schema::Profile::Pixel,
+        drivers::shaderc::TargetProfile::Vertex => schema::Profile::Vertex,
+        drivers::shaderc::TargetProfile::Compute => schema::Profile::Compute,
+        drivers::shaderc::TargetProfile::Geometry => schema::Profile::Geometry,
+        drivers::shaderc::TargetProfile::Domain => schema::Profile::Domain,
+        drivers::shaderc::TargetProfile::Hull => schema::Profile::Hull,
+        drivers::shaderc::TargetProfile::Task => schema::Profile::Task,
+        drivers::shaderc::TargetProfile::Mesh => schema::Profile::Mesh,
+        drivers::shaderc::TargetProfile::RayGen => schema::Profile::RayGen,
+        drivers::shaderc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
+        drivers::shaderc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
+        drivers::shaderc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
+        drivers::shaderc::TargetProfile::RayMiss => schema::Profile::RayMiss,
+    };
+
+    let results = transport::compile_glslc(&config, &entry.identity, options)?;
+    for result in &results {
+        let output_identity = if let Some(ref identity) = &result.identity {
+            identity.sha256_base58.clone()
+        } else {
+            String::new()
+        };
+        trace!(
+            "   GLSLC output received - identity:{}, name:{}",
+            output_identity,
+            result.name
+        );
+        if !result.output.is_empty() {
+            trace!("   ---\nOutput:\n---\n{}", result.output);
+        }
+        if !result.errors.is_empty() {
+            error!("   ---\nErrors:\n---\n{}", result.errors);
+        }
+
+        if result.name == "Code" {
+            record.artifacts.push(ShaderArtifact {
+                name: result.name.to_owned(),
+                input: schema::InputFormat::Glsl,
+                output: schema::OutputFormat::Spirv,
+                identity: output_identity.to_owned(),
+                encoding: String::from("identity"),
+                profile: artifact_profile,
+                validated: false,
+            });
+        }
+    }
+
+    let mut records = records.write().unwrap();
+    records.push(record);
+    Ok(())
+}
+
+fn validate_artifact(artifact: &mut ShaderArtifact, config: &transport::Config) -> Result<()> {
+    if !artifact.validated {
+        match artifact.output {
+            schema::OutputFormat::Dxil => {
+                // Artifact with unsigned DXIL
+                let unsigned_identity = artifact.identity.to_owned();
+                info!("Signing DXIL: {}", &unsigned_identity);
+                let signed_results = transport::sign_dxil(&config, &unsigned_identity)?;
+                if signed_results.len() != 1 {
+                    return Err(Error::bug("failed to sign dxil - invalid results"));
+                }
+
+                let signed_result = &signed_results[0];
+                artifact.validated = true;
+                artifact.identity = if let Some(ref identity) = &signed_result.identity
+                {
+                    identity.sha256_base58.clone()
+                } else {
+                    return Err(Error::bug(format!(
+                        "failed to sign dxil - {}",
+                        signed_result.errors
+                    )));
+                };
+            }
+            schema::OutputFormat::Spirv => {
+                // Artifact with SPIR-V - run spirv-val?
+                // https://vulkan.lunarg.com/doc/view/1.1.92.1/linux/spirv_toolchain.html
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 fn process() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
 
@@ -201,6 +706,8 @@ fn process() -> Result<()> {
         window_size: process_opt.window_size,
         connection_window_size: process_opt.connection_window_size,
     };
+
+    let mut thread_pool = Pool::new(8);
 
     // Load shader manifest from toml path
     let manifest = load_manifest(&base_path, &process_opt.input.as_path())?;
@@ -293,544 +800,110 @@ fn process() -> Result<()> {
     let missing_identities = transport::query_missing_identities(&config, &active_identities)?;
 
     // Upload missing identities to the remote endpoint.
-    for missing_identity in &missing_identities {
-        info!("Uploading missing identity: {}", missing_identity);
-        let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
-        let uploaded_identity =
-            transport::upload_identity(&config, &missing_identity, &identity_data)?;
-        assert_eq!(missing_identity, &uploaded_identity);
+    if process_opt.parallel {
+        thread_pool.scoped(|scoped| {
+            for missing_identity in &missing_identities {
+                let config = config.clone();
+                scoped.execute(move || {
+                    info!("Uploading missing identity: {}", missing_identity);
+                    let identity_data = fetch_from_cache(cache_path, &missing_identity).unwrap();//?;
+                    let uploaded_identity =
+                        transport::upload_identity(&config, &missing_identity, &identity_data).unwrap();//?;
+                    assert_eq!(missing_identity, &uploaded_identity);
+                });
+            }
+        });
+    } else {
+        for missing_identity in &missing_identities {
+            info!("Uploading missing identity: {}", missing_identity);
+            let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
+            let uploaded_identity =
+                transport::upload_identity(&config, &missing_identity, &identity_data)?;
+            assert_eq!(missing_identity, &uploaded_identity);
+        }
     }
 
-    let mut records: Vec<ShaderRecord> = Vec::new();
+    let records: Arc<RwLock<Vec<ShaderRecord>>> = Arc::new(RwLock::new(Vec::new()));
 
     // Compile HLSL -> DXIL
-    for ParsedShaderEntry {
-        ref name,
-        ref profile,
-        ref entry_point,
-        ref identity,
-        ref output,
-        ref language,
-        ref defines,
-    } in &merkle_entries
-    {
-        if language != "hlsl" {
-            // Not an HLSL source file
-            continue;
-        }
-
-        if output.iter().find(|name| name == &"dxil").is_none() {
-            // DXIL output is not requested for this entry point
-            continue;
-        }
-
-        info!(
-            "Compiling '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
-            profile,
-            name,
-            entry_point,
-            &cache_path.join(&identity),
-            defines,
-        );
-
-        let mut define_map: HashMap<String, String> = HashMap::new();
-        defines.iter().for_each(|(name, value)| {
-            define_map.insert(name.to_string(), value.to_string());
+    if process_opt.parallel {
+        thread_pool.scoped(|scoped| {
+            for entry in &merkle_entries {
+                let config = config.clone();
+                let records = records.clone();
+                scoped.execute(move || {
+                    compile_hlsl_to_dxil(records, &config, &cache_path, entry).unwrap();//?;
+                });
+            }
         });
-
-        let (target_profile, target_version) = parse_dxc_profile_version(profile.as_ref());
-        let options = drivers::dxc::CompileOptions {
-            entry_point: entry_point.clone(),
-            definitions: define_map,
-            input_format: drivers::dxc::InputFormat::Hlsl as i32,
-            output_format: drivers::dxc::OutputFormat::Dxil as i32,
-            target_version: target_version as i32,
-            target_profile: target_profile as i32,
-            optimization_level: drivers::dxc::OptimizationLevel::Two as i32,
-            hlsl_version: drivers::dxc::HlslVersion::Edition2018 as i32,
-            warning_level: drivers::dxc::WarningLevel::Default as i32,
-            validation_level: drivers::dxc::ValidationLevel::Default as i32,
-            code_generation: drivers::dxc::CodeGeneration::Enabled as i32,
-            debug_info: drivers::dxc::DebugInfo::Enabled as i32,
-            listing_info: drivers::dxc::ListingInfo::Enabled as i32,
-            flow_control: drivers::dxc::FlowControl::Default as i32,
-            denorm: drivers::dxc::DenormLevel::Any as i32,
-            matrix_packing: drivers::dxc::MatrixPacking::Default as i32,
-            signature_packing: drivers::dxc::SignaturePacking::PrefixStable as i32,
-            all_resources_bound: false,
-            enable_16bit_types: false,
-            legacy_macro_expansion: false,
-            color_coded_listing: true,
-            strict_mode: false,
-            force_ieee: false,
-            output_include_depth: false,
-            output_include_details: false,
-            output_hex_literals: false,
-            output_instruction_numbers: false,
-            output_instruction_offsets: false,
-            output_optimizer_commands: false,
-            ignore_line_directives: false,
-            deny_legacy_cbuffer_load: true,
-            spirv: None,
-        };
-
-        let mut record = ShaderRecord {
-            name: name.to_owned(),
-            entry: entry_point.clone(),
-            artifacts: Vec::new(),
-        };
-
-        let artifact_profile = match target_profile {
-            drivers::dxc::TargetProfile::Pixel => schema::Profile::Pixel,
-            drivers::dxc::TargetProfile::Vertex => schema::Profile::Vertex,
-            drivers::dxc::TargetProfile::Compute => schema::Profile::Compute,
-            drivers::dxc::TargetProfile::Geometry => schema::Profile::Geometry,
-            drivers::dxc::TargetProfile::Domain => schema::Profile::Domain,
-            drivers::dxc::TargetProfile::Hull => schema::Profile::Hull,
-            drivers::dxc::TargetProfile::RayGen => schema::Profile::RayGen,
-            drivers::dxc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
-            drivers::dxc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
-            drivers::dxc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
-            drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
-        };
-
-        let results = transport::compile_dxc(&config, &identity, options)?;
-        for result in &results {
-            let output_identity = if let Some(ref identity) = &result.identity {
-                identity.sha256_base58.clone()
-            } else {
-                String::new()
-            };
-            trace!(
-                "   DXC output received - identity:{}, name:{}",
-                output_identity,
-                result.name
-            );
-            if !result.output.is_empty() {
-                trace!("   ---\nOutput:\n---\n{}", result.output);
-            }
-            if !result.errors.is_empty() {
-                error!("   ---\nErrors:\n---\n{}", result.errors);
-            }
-
-            if result.name == "Code" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Hlsl,
-                    output: schema::OutputFormat::Dxil,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
-                });
-            } else if result.name == "Listing" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Hlsl,
-                    output: schema::OutputFormat::Text,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
-                });
-            } else if result.name == "Debug" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Hlsl,
-                    output: schema::OutputFormat::Blob,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
-                });
-            }
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry)?;
         }
-
-        records.push(record);
     }
 
     // Compile HLSL -> SPIR-V
-    for ParsedShaderEntry {
-        ref name,
-        ref profile,
-        ref entry_point,
-        ref identity,
-        ref output,
-        ref language,
-        ref defines,
-    } in &merkle_entries
-    {
-        if language != "hlsl" {
-            // Not an HLSL source file
-            continue;
-        }
-
-        if output.iter().find(|name| name == &"spirv").is_none() {
-            // SPIR-V output is not requested for this entry point
-            continue;
-        }
-
-        info!(
-            "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
-            profile,
-            name,
-            entry_point,
-            &cache_path.join(&identity),
-            defines,
-        );
-
-        let mut define_map: HashMap<String, String> = HashMap::new();
-        defines.iter().for_each(|(name, value)| {
-            define_map.insert(name.to_string(), value.to_string());
+    if process_opt.parallel {
+        thread_pool.scoped(|scoped| {
+            for entry in &merkle_entries {
+                let config = config.clone();
+                let records = records.clone();
+                scoped.execute(move || {
+                    compile_hlsl_to_spirv(records, &config, &cache_path, entry).unwrap();//?;
+                });
+            }
         });
-
-        let (target_profile, target_version) = parse_dxc_profile_version(profile.as_ref());
-        let options = drivers::dxc::CompileOptions {
-            entry_point: entry_point.clone(),
-            definitions: define_map,
-            input_format: drivers::dxc::InputFormat::Hlsl as i32,
-            output_format: drivers::dxc::OutputFormat::Spirv as i32,
-            target_version: target_version as i32,
-            target_profile: target_profile as i32,
-            optimization_level: drivers::dxc::OptimizationLevel::Two as i32,
-            hlsl_version: drivers::dxc::HlslVersion::Edition2018 as i32,
-            warning_level: drivers::dxc::WarningLevel::Default as i32,
-            validation_level: drivers::dxc::ValidationLevel::Default as i32,
-            code_generation: drivers::dxc::CodeGeneration::Enabled as i32,
-            debug_info: drivers::dxc::DebugInfo::Enabled as i32,
-            listing_info: drivers::dxc::ListingInfo::Enabled as i32,
-            flow_control: drivers::dxc::FlowControl::Default as i32,
-            denorm: drivers::dxc::DenormLevel::Any as i32,
-            matrix_packing: drivers::dxc::MatrixPacking::Default as i32,
-            signature_packing: drivers::dxc::SignaturePacking::PrefixStable as i32,
-            all_resources_bound: false,
-            enable_16bit_types: false,
-            legacy_macro_expansion: false,
-            color_coded_listing: true,
-            strict_mode: false,
-            force_ieee: false,
-            output_include_depth: false,
-            output_include_details: false,
-            output_hex_literals: false,
-            output_instruction_numbers: false,
-            output_instruction_offsets: false,
-            output_optimizer_commands: false,
-            ignore_line_directives: false,
-            deny_legacy_cbuffer_load: true,
-            spirv: Some(drivers::dxc::CompileOptionsSpirv {
-                version: drivers::dxc::VulkanVersion::Vulkan11 as i32,
-                emit_reflection: true,
-                dx_position_w: false,
-                invert_y: false,
-                resource_layout: drivers::dxc::VulkanResourceLayout::Dx as i32,
-                binding_shifts: vec![
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::B as i32,
-                        shift: 0,
-                        space: 0,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::S as i32,
-                        shift: 1000,
-                        space: 0,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::T as i32,
-                        shift: 2000,
-                        space: 0,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::U as i32,
-                        shift: 3000,
-                        space: 0,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::B as i32,
-                        shift: 0,
-                        space: 1,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::S as i32,
-                        shift: 1000,
-                        space: 1,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::T as i32,
-                        shift: 2000,
-                        space: 1,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::U as i32,
-                        shift: 3000,
-                        space: 1,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::B as i32,
-                        shift: 0,
-                        space: 2,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::S as i32,
-                        shift: 1000,
-                        space: 2,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::T as i32,
-                        shift: 2000,
-                        space: 2,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::U as i32,
-                        shift: 3000,
-                        space: 2,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::B as i32,
-                        shift: 0,
-                        space: 3,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::S as i32,
-                        shift: 1000,
-                        space: 3,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::T as i32,
-                        shift: 2000,
-                        space: 3,
-                    },
-                    drivers::dxc::VulkanBindingShift {
-                        binding_type: drivers::dxc::VulkanBindingType::U as i32,
-                        shift: 3000,
-                        space: 3,
-                    },
-                ],
-                binding_registers: Vec::new(),
-                opt_config: Vec::new(),
-                debug_info: Vec::new(),
-                extensions: Vec::new(),
-            }),
-        };
-
-        let mut record = ShaderRecord {
-            name: name.to_owned(),
-            entry: entry_point.clone(),
-            artifacts: Vec::new(),
-        };
-
-        let artifact_profile = match target_profile {
-            drivers::dxc::TargetProfile::Pixel => schema::Profile::Pixel,
-            drivers::dxc::TargetProfile::Vertex => schema::Profile::Vertex,
-            drivers::dxc::TargetProfile::Compute => schema::Profile::Compute,
-            drivers::dxc::TargetProfile::Geometry => schema::Profile::Geometry,
-            drivers::dxc::TargetProfile::Domain => schema::Profile::Domain,
-            drivers::dxc::TargetProfile::Hull => schema::Profile::Hull,
-            drivers::dxc::TargetProfile::RayGen => schema::Profile::RayGen,
-            drivers::dxc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
-            drivers::dxc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
-            drivers::dxc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
-            drivers::dxc::TargetProfile::RayMiss => schema::Profile::RayMiss,
-        };
-
-        let results = transport::compile_dxc(&config, &identity, options)?;
-        for result in &results {
-            let output_identity = if let Some(ref identity) = &result.identity {
-                identity.sha256_base58.clone()
-            } else {
-                String::new()
-            };
-            trace!(
-                "   DXC output received - identity:{}, name:{}",
-                output_identity,
-                result.name
-            );
-            if !result.output.is_empty() {
-                trace!("   ---\nOutput:\n---\n{}", result.output);
-            }
-            if !result.errors.is_empty() {
-                error!("   ---\nErrors:\n---\n{}", result.errors);
-            }
-
-            if result.name == "Code" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Hlsl,
-                    output: schema::OutputFormat::Spirv,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
-                });
-            } else if result.name == "Listing" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Hlsl,
-                    output: schema::OutputFormat::Text,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
-                });
-            }
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
         }
-
-        records.push(record);
     }
 
     // Compile GLSL -> SPIR-V
-    for ParsedShaderEntry {
-        ref name,
-        ref profile,
-        ref entry_point,
-        ref identity,
-        ref output,
-        ref language,
-        ref defines,
-    } in &merkle_entries
-    {
-        if language != "glsl" {
-            // Not a GLSL source file
-            continue;
-        }
-
-        if output.iter().find(|name| name == &"spirv").is_none() {
-            // SPIR-V output is not requested for this entry point
-            continue;
-        }
-
-        info!(
-            "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:?}",
-            profile,
-            name,
-            entry_point,
-            &cache_path.join(&identity),
-            defines,
-        );
-
-        let mut define_map: HashMap<String, String> = HashMap::new();
-        defines.iter().for_each(|(name, value)| {
-            define_map.insert(name.to_string(), value.to_string());
-        });
-
-        let (target_profile, vulkan_version) = parse_glslc_profile_version(profile.as_ref());
-        let options = drivers::shaderc::CompileOptions {
-            entry_point: entry_point.clone(),
-            definitions: define_map,
-            input_format: drivers::shaderc::InputFormat::Glsl as i32,
-            output_format: drivers::shaderc::OutputFormat::Spirv as i32,
-            target_profile: target_profile as i32,
-            version: vulkan_version as i32,
-            optimization_level: drivers::shaderc::OptimizationLevel::Perf as i32,
-            warning_level: drivers::shaderc::WarningLevel::Default as i32,
-            debug_info: drivers::shaderc::DebugInfo::Enabled as i32,
-            auto_bind_uniforms: true,
-            auto_map_locations: true,
-            hlsl_functionality1: true,
-            hlsl_iomap: true,
-            hlsl_offsets: true,
-            std: String::new(),
-            binding_bases: Vec::new(),
-            binding_stage_bases: Vec::new(),
-            register_bases: Vec::new(),
-            register_stage_bases: Vec::new(),
-        };
-
-        let mut record = ShaderRecord {
-            name: name.to_owned(),
-            entry: entry_point.clone(),
-            artifacts: Vec::new(),
-        };
-
-        let artifact_profile = match target_profile {
-            drivers::shaderc::TargetProfile::Pixel => schema::Profile::Pixel,
-            drivers::shaderc::TargetProfile::Vertex => schema::Profile::Vertex,
-            drivers::shaderc::TargetProfile::Compute => schema::Profile::Compute,
-            drivers::shaderc::TargetProfile::Geometry => schema::Profile::Geometry,
-            drivers::shaderc::TargetProfile::Domain => schema::Profile::Domain,
-            drivers::shaderc::TargetProfile::Hull => schema::Profile::Hull,
-            drivers::shaderc::TargetProfile::Task => schema::Profile::Task,
-            drivers::shaderc::TargetProfile::Mesh => schema::Profile::Mesh,
-            drivers::shaderc::TargetProfile::RayGen => schema::Profile::RayGen,
-            drivers::shaderc::TargetProfile::RayIntersection => schema::Profile::RayIntersection,
-            drivers::shaderc::TargetProfile::RayClosestHit => schema::Profile::RayClosestHit,
-            drivers::shaderc::TargetProfile::RayAnyHit => schema::Profile::RayAnyHit,
-            drivers::shaderc::TargetProfile::RayMiss => schema::Profile::RayMiss,
-        };
-
-        let results = transport::compile_glslc(&config, &identity, options)?;
-        for result in &results {
-            let output_identity = if let Some(ref identity) = &result.identity {
-                identity.sha256_base58.clone()
-            } else {
-                String::new()
-            };
-            trace!(
-                "   GLSLC output received - identity:{}, name:{}",
-                output_identity,
-                result.name
-            );
-            if !result.output.is_empty() {
-                trace!("   ---\nOutput:\n---\n{}", result.output);
-            }
-            if !result.errors.is_empty() {
-                error!("   ---\nErrors:\n---\n{}", result.errors);
-            }
-
-            if result.name == "Code" {
-                record.artifacts.push(ShaderArtifact {
-                    name: result.name.to_owned(),
-                    input: schema::InputFormat::Glsl,
-                    output: schema::OutputFormat::Spirv,
-                    identity: output_identity.to_owned(),
-                    encoding: String::from("identity"),
-                    profile: artifact_profile,
-                    validated: false,
+    if process_opt.parallel {
+        thread_pool.scoped(|scoped| {
+            for entry in &merkle_entries {
+                let config = config.clone();
+                let records = records.clone();
+                scoped.execute(move || {
+                    compile_glsl_to_spirv(records, &config, &cache_path, entry).unwrap();//?;
                 });
             }
+        });
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
         }
-
-        records.push(record);
     }
 
     if process_opt.validate {
-        for record in &mut records {
-            for mut artifact in &mut record.artifacts {
-                if !artifact.validated {
-                    match artifact.output {
-                        schema::OutputFormat::Dxil => {
-                            // Artifact with unsigned DXIL
-                            let unsigned_identity = artifact.identity.to_owned();
-                            info!("Signing DXIL: {}", &unsigned_identity);
-                            let signed_results = transport::sign_dxil(&config, &unsigned_identity)?;
-                            if signed_results.len() != 1 {
-                                return Err(Error::bug("failed to sign dxil - invalid results"));
-                            }
-
-                            let signed_result = &signed_results[0];
-                            artifact.validated = true;
-                            artifact.identity = if let Some(ref identity) = &signed_result.identity
-                            {
-                                identity.sha256_base58.clone()
-                            } else {
-                                return Err(Error::bug(format!(
-                                    "failed to sign dxil - {}",
-                                    signed_result.errors
-                                )));
-                            };
+        let mut records = records.write().unwrap();
+        if process_opt.parallel {
+            thread_pool.scoped(|scoped| {
+                for record in &mut *records {
+                    let config = config.clone();
+                    scoped.execute(move || {
+                        for artifact in &mut record.artifacts {
+                            validate_artifact(artifact, &config).unwrap();//?;
                         }
-                        schema::OutputFormat::Spirv => {
-                            // Artifact with SPIR-V - run spirv-val?
-                            // https://vulkan.lunarg.com/doc/view/1.1.92.1/linux/spirv_toolchain.html
-                        }
-                        _ => {}
-                    }
+                    });
+                }
+            });
+        } else {
+            for record in &mut *records {
+                for artifact in &mut record.artifacts {
+                    validate_artifact(artifact, &config)?;
                 }
             }
         }
     }
 
     if process_opt.download || (process_opt.output.is_some() && process_opt.embed) {
-        for record in &records {
+        let records = records.read().unwrap();
+        for record in &*records {
             if !record.artifacts.is_empty() {
                 debug!("Artifacts:[{}] - Entry:[{}]", record.name, record.entry);
             }
@@ -880,6 +953,7 @@ fn process() -> Result<()> {
     }
 
     if let Some(ref output_path) = process_opt.output {
+        let records = records.read().unwrap();
         let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
         let manifest_shaders: Vec<_> = records
             .iter()
