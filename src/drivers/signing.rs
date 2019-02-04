@@ -80,10 +80,11 @@ pub fn sign_dxil(input: &[u8], temp_path: &Path) -> Result<(Vec<u8>, String)> {
 }
 
 pub fn identity_from_request(unsigned_identity: &str) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::default();
     hasher.input(&*SIGN_IDENTITY.as_bytes());
     hasher.input(&unsigned_identity.as_bytes());
-    hasher.result().to_vec().to_base58()
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    String::from_utf8(data).unwrap()
 }

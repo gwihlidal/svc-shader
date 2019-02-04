@@ -128,7 +128,6 @@ pub fn identity_from_request(
     input_identity: &str,
     options: &spirv_dis::DisassembleOptions,
 ) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::default();
     hasher.input(&*SPIRV_DIS_IDENTITY.as_bytes());

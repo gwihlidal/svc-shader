@@ -1,7 +1,6 @@
 extern crate regex;
 #[macro_use]
 extern crate lazy_static;
-extern crate base58;
 extern crate filebuffer;
 extern crate futures;
 extern crate futures_cpupool;
@@ -9,14 +8,12 @@ extern crate glob;
 extern crate normalize_line_endings;
 extern crate prost;
 extern crate sha2;
+extern crate smush;
 #[macro_use]
 extern crate prost_derive;
 extern crate bincode;
-extern crate brotli;
 extern crate dotenv;
 extern crate failure;
-extern crate flate2;
-extern crate lzma_rs;
 extern crate prost_types;
 extern crate tower_grpc;
 extern crate uuid;
@@ -83,7 +80,6 @@ pub mod gen {
 pub mod client;
 pub mod compile;
 pub mod drivers;
-pub mod encoding;
 pub mod error;
 pub mod identity;
 pub mod includes;

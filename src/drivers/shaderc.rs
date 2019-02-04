@@ -324,7 +324,6 @@ pub fn profile_to_string(profile: shaderc::TargetProfile) -> &'static str {
 }
 
 pub fn identity_from_request(source_identity: &str, options: &shaderc::CompileOptions) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::default();
     hasher.input(&*GLSLC_IDENTITY.as_bytes());
@@ -367,5 +366,7 @@ pub fn identity_from_request(source_identity: &str, options: &shaderc::CompileOp
         hasher.input(&unsafe { any_as_u8_slice(&binding.set0) });
         hasher.input(&unsafe { any_as_u8_slice(&binding.binding0) });
     });
-    hasher.result().to_vec().to_base58()
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    String::from_utf8(data).unwrap()
 }

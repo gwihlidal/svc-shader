@@ -14,7 +14,6 @@ pub unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 }
 
 pub fn compute_identity(data: &[u8]) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
 
     // create a Sha256 object
@@ -24,7 +23,9 @@ pub fn compute_identity(data: &[u8]) -> String {
     hasher.input(data);
 
     // read hash digest and consume hasher
-    hasher.result().to_vec().to_base58()
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    String::from_utf8(data).unwrap()
 }
 
 struct HashWriter<T: Hasher>(T);
@@ -66,7 +67,6 @@ lazy_static! {
 }
 
 pub fn compute_file_identity<P: AsRef<Path>>(path: P) -> io::Result<String> {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
 
     let fbuffer = FileBuffer::open(&path)?;
@@ -78,7 +78,9 @@ pub fn compute_file_identity<P: AsRef<Path>>(path: P) -> io::Result<String> {
     hasher.input(&fbuffer);
 
     // read hash digest and consume hasher
-    Ok(hasher.result().to_vec().to_base58())
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    Ok(String::from_utf8(data).unwrap())
 }
 
 lazy_static! {

@@ -1,4 +1,3 @@
-extern crate base58;
 extern crate chashmap;
 extern crate include_merkle;
 extern crate scoped_threadpool;
@@ -12,21 +11,21 @@ extern crate log;
 extern crate chrono;
 extern crate fern;
 extern crate flatbuffers;
+extern crate smush;
 
+use scoped_threadpool::Pool;
 use std::collections::hash_map::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::path::PathBuf;
-use scoped_threadpool::Pool;
+use std::sync::{Arc, RwLock};
 use structopt::StructOpt;
 use svc_shader::client::transport;
 use svc_shader::compile::*;
-use svc_shader::encoding::{decode_data, encode_data, Encoding};
 use svc_shader::error::{Error, Result};
 use svc_shader::proto::drivers;
-use svc_shader::utilities::{self, path_exists, read_file};
-use std::sync::{RwLock, Arc};
+use svc_shader::utilities::{path_exists, read_file};
 
 mod generated;
 use crate::generated::service::shader::schema;
@@ -171,7 +170,12 @@ struct ShaderRecord {
     artifacts: Vec<ShaderArtifact>,
 }
 
-fn compile_hlsl_to_dxil(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+fn compile_hlsl_to_dxil(
+    records: Arc<RwLock<Vec<ShaderRecord>>>,
+    config: &transport::Config,
+    cache_path: &Path,
+    entry: &ParsedShaderEntry,
+) -> Result<()> {
     if entry.language != "hlsl" {
         // Not an HLSL source file
         return Ok(());
@@ -309,7 +313,12 @@ fn compile_hlsl_to_dxil(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transp
     Ok(())
 }
 
-fn compile_hlsl_to_spirv(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+fn compile_hlsl_to_spirv(
+    records: Arc<RwLock<Vec<ShaderRecord>>>,
+    config: &transport::Config,
+    cache_path: &Path,
+    entry: &ParsedShaderEntry,
+) -> Result<()> {
     if entry.language != "hlsl" {
         // Not an HLSL source file
         return Ok(());
@@ -529,7 +538,12 @@ fn compile_hlsl_to_spirv(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &trans
     Ok(())
 }
 
-fn compile_glsl_to_spirv(records: Arc<RwLock<Vec<ShaderRecord>>>, config: &transport::Config, cache_path: &Path, entry: &ParsedShaderEntry) -> Result<()> {
+fn compile_glsl_to_spirv(
+    records: Arc<RwLock<Vec<ShaderRecord>>>,
+    config: &transport::Config,
+    cache_path: &Path,
+    entry: &ParsedShaderEntry,
+) -> Result<()> {
     if entry.language != "glsl" {
         // Not a GLSL source file
         return Ok(());
@@ -650,8 +664,7 @@ fn validate_artifact(artifact: &mut ShaderArtifact, config: &transport::Config) 
 
                 let signed_result = &signed_results[0];
                 artifact.validated = true;
-                artifact.identity = if let Some(ref identity) = &signed_result.identity
-                {
+                artifact.identity = if let Some(ref identity) = &signed_result.identity {
                     identity.sha256_base58.clone()
                 } else {
                     return Err(Error::bug(format!(
@@ -734,9 +747,18 @@ fn process() -> Result<()> {
             None => String::new(),
         };
         let mut entry_graph = include_merkle::IncludeNodeGraph::new();
-        let entry_node =
-            include_merkle::traverse_build(&mut entry_graph, &base_path, &canonical_path, 0, true /* normalize endings */);
-        include_merkle::traverse_patch(&mut entry_graph, entry_node, true /* normalize endings */);
+        let entry_node = include_merkle::traverse_build(
+            &mut entry_graph,
+            &base_path,
+            &canonical_path,
+            0,
+            true, /* normalize endings */
+        );
+        include_merkle::traverse_patch(
+            &mut entry_graph,
+            entry_node,
+            true, /* normalize endings */
+        );
         include_merkle::graph_to_node_vec(&entry_graph)
             .iter()
             .for_each(|node| {
@@ -806,9 +828,10 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 scoped.execute(move || {
                     info!("Uploading missing identity: {}", missing_identity);
-                    let identity_data = fetch_from_cache(cache_path, &missing_identity).unwrap();//?;
+                    let identity_data = fetch_from_cache(cache_path, &missing_identity).unwrap(); //?;
                     let uploaded_identity =
-                        transport::upload_identity(&config, &missing_identity, &identity_data).unwrap();//?;
+                        transport::upload_identity(&config, &missing_identity, &identity_data)
+                            .unwrap(); //?;
                     assert_eq!(missing_identity, &uploaded_identity);
                 });
             }
@@ -832,7 +855,7 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_hlsl_to_dxil(records, &config, &cache_path, entry).unwrap();//?;
+                    compile_hlsl_to_dxil(records, &config, &cache_path, entry).unwrap(); //?;
                 });
             }
         });
@@ -850,7 +873,7 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_hlsl_to_spirv(records, &config, &cache_path, entry).unwrap();//?;
+                    compile_hlsl_to_spirv(records, &config, &cache_path, entry).unwrap(); //?;
                 });
             }
         });
@@ -868,7 +891,7 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_glsl_to_spirv(records, &config, &cache_path, entry).unwrap();//?;
+                    compile_glsl_to_spirv(records, &config, &cache_path, entry).unwrap(); //?;
                 });
             }
         });
@@ -887,7 +910,7 @@ fn process() -> Result<()> {
                     let config = config.clone();
                     scoped.execute(move || {
                         for artifact in &mut record.artifacts {
-                            validate_artifact(artifact, &config).unwrap();//?;
+                            validate_artifact(artifact, &config).unwrap(); //?;
                         }
                     });
                 }
@@ -1094,113 +1117,6 @@ fn setup_logging(verbosity: u64) -> Result<()> {
         .unwrap();
 
     //jobs::enqueue_shader_work(&base_path, &manifest.entries, 8);
-
-    Ok(())
-}
-
-fn _compress_test() -> Result<()> {
-    let root_dir = Path::new("./tests");
-    let shader_file = root_dir.join("data/CodeGenHLSL/Samples/MiniEngine/ParticleSpawnCS.hlsl");
-    let shader_text = utilities::read_file_string(&shader_file)?;
-    let shader_data = shader_text.as_bytes();
-
-    let identity = encode_data(&shader_data, &Encoding::Identity)?;
-    let deflate = encode_data(&shader_data, &Encoding::Deflate)?;
-    let gzip = encode_data(&shader_data, &Encoding::Gzip)?;
-    let brotli = encode_data(&shader_data, &Encoding::Brotli)?;
-    let zlib = encode_data(&shader_data, &Encoding::Zlib)?;
-    let zstd = encode_data(&shader_data, &Encoding::Zstd)?;
-    let lz4 = encode_data(&shader_data, &Encoding::Lz4)?;
-    let lzma = encode_data(&shader_data, &Encoding::Lzma)?;
-    let lzma2 = encode_data(&shader_data, &Encoding::Lzma2)?;
-    let bincode = encode_data(&shader_data, &Encoding::BinCode)?;
-    //let smolv = encode_data(&shader_data, &Encoding::SmolV)?;
-
-    assert_eq!(shader_data, identity.as_slice());
-    assert_ne!(shader_data, deflate.as_slice());
-    assert_ne!(shader_data, gzip.as_slice());
-    assert_ne!(shader_data, brotli.as_slice());
-    assert_ne!(shader_data, zlib.as_slice());
-    assert_ne!(shader_data, zstd.as_slice());
-    assert_ne!(shader_data, lz4.as_slice());
-    assert_ne!(shader_data, lzma.as_slice());
-    assert_ne!(shader_data, lzma2.as_slice());
-    assert_ne!(shader_data, bincode.as_slice());
-    //assert_ne!(shader_data, smolv.as_slice());
-
-    let identity_prime = decode_data(&identity, &Encoding::Identity)?;
-    let deflate_prime = decode_data(&deflate, &Encoding::Deflate)?;
-    let gzip_prime = decode_data(&gzip, &Encoding::Gzip)?;
-    let brotli_prime = decode_data(&brotli, &Encoding::Brotli)?;
-    let zlib_prime = decode_data(&zlib, &Encoding::Zlib)?;
-    let zstd_prime = decode_data(&zstd, &Encoding::Zstd)?;
-    let lz4_prime = decode_data(&lz4, &Encoding::Lz4)?;
-    let lzma_prime = decode_data(&lzma, &Encoding::Lzma)?;
-    let lzma2_prime = decode_data(&lzma2, &Encoding::Lzma2)?;
-    let bincode_prime = decode_data(&bincode, &Encoding::BinCode)?;
-    //let smolv_prime = decode_data(&smolv, &Encoding::SmolV)?;
-
-    let identity_len = identity.len() as f32;
-    let deflate_len = deflate.len() as f32;
-    let gzip_len = gzip.len() as f32;
-    let brotli_len = brotli.len() as f32;
-    let zlib_len = zlib.len() as f32;
-    let zstd_len = zstd.len() as f32;
-    let lz4_len = lz4.len() as f32;
-    let lzma_len = lzma.len() as f32;
-    let lzma2_len = lzma2.len() as f32;
-    let bincode_len = bincode.len() as f32;
-    //let smolv_len = smolv.len() as f32;
-
-    println!(
-        "Deflate is {}% smaller than Identity",
-        (identity_len - deflate_len) / identity_len * 100f32
-    );
-    println!(
-        "Gzip is {}% smaller than Identity",
-        (identity_len - gzip_len) / identity_len * 100f32
-    );
-    println!(
-        "Brotli is {}% smaller than Identity",
-        (identity_len - brotli_len) / identity_len * 100f32
-    );
-    println!(
-        "Zlib is {}% smaller than Identity",
-        (identity_len - zlib_len) / identity_len * 100f32
-    );
-    println!(
-        "Zstd is {}% smaller than Identity",
-        (identity_len - zstd_len) / identity_len * 100f32
-    );
-    println!(
-        "Lz4 is {}% smaller than Identity",
-        (identity_len - lz4_len) / identity_len * 100f32
-    );
-    println!(
-        "Lzma is {}% smaller than Identity",
-        (identity_len - lzma_len) / identity_len * 100f32
-    );
-    println!(
-        "Lzma2 is {}% smaller than Identity",
-        (identity_len - lzma2_len) / identity_len * 100f32
-    );
-    println!(
-        "BinCode is {}% smaller than Identity",
-        (identity_len - bincode_len) / identity_len * 100f32
-    );
-    //println!("Smol-V is {}% smaller than Identity", (identity_len - smolv_len) / identity_len * 100f32);
-
-    assert_eq!(shader_data, identity_prime.as_slice());
-    assert_eq!(shader_data, deflate_prime.as_slice());
-    assert_eq!(shader_data, gzip_prime.as_slice());
-    assert_eq!(shader_data, brotli_prime.as_slice());
-    assert_eq!(shader_data, zlib_prime.as_slice());
-    assert_eq!(shader_data, zstd_prime.as_slice());
-    assert_eq!(shader_data, lz4_prime.as_slice());
-    assert_eq!(shader_data, lzma_prime.as_slice());
-    assert_eq!(shader_data, lzma2_prime.as_slice());
-    assert_eq!(shader_data, bincode_prime.as_slice());
-    //assert_eq!(shader_data, smolv_prime.as_slice());
 
     Ok(())
 }

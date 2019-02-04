@@ -90,7 +90,6 @@ pub fn compile() -> Result<String> {
 }
 
 pub fn identity_from_request(source_identity: &str, options: &fxc::CompileOptions) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::default();
     hasher.input(&*FXC_IDENTITY.as_bytes());
@@ -161,5 +160,7 @@ pub fn identity_from_request(source_identity: &str, options: &fxc::CompileOption
             });
         }
     }*/
-    hasher.result().to_vec().to_base58()
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    String::from_utf8(data).unwrap()
 }

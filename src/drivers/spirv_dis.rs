@@ -101,7 +101,6 @@ pub fn identity_from_request(
     input_identity: &str,
     options: &spirv_dis::DisassembleOptions,
 ) -> String {
-    use base58::ToBase58;
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::default();
     hasher.input(&*SPIRV_DIS_IDENTITY.as_bytes());
@@ -111,7 +110,9 @@ pub fn identity_from_request(
     hasher.input(&unsafe { any_as_u8_slice(&options.no_header) });
     hasher.input(&unsafe { any_as_u8_slice(&options.raw_id) });
     hasher.input(&unsafe { any_as_u8_slice(&options.offsets) });
-    hasher.result().to_vec().to_base58()
+    let data = hasher.result().to_vec();
+    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    String::from_utf8(data).unwrap()
 }
 
 /*
