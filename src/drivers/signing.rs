@@ -85,6 +85,6 @@ pub fn identity_from_request(unsigned_identity: &str) -> String {
     hasher.input(&*SIGN_IDENTITY.as_bytes());
     hasher.input(&unsigned_identity.as_bytes());
     let data = hasher.result().to_vec();
-    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    let data = smush::encode(&data, smush::Encoding::Base58, smush::Quality::Default).unwrap();
     String::from_utf8(data).unwrap()
 }

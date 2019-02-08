@@ -161,6 +161,6 @@ pub fn identity_from_request(source_identity: &str, options: &fxc::CompileOption
         }
     }*/
     let data = hasher.result().to_vec();
-    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    let data = smush::encode(&data, smush::Encoding::Base58, smush::Quality::Default).unwrap();
     String::from_utf8(data).unwrap()
 }

@@ -15,7 +15,12 @@ pub fn compute_data_identity(data: &[u8]) -> Identity {
 
     // read hash digest and consume hasher
     let output_raw = hasher.result().to_vec();
-    let output_b58 = smush::encode_data(&output_raw, smush::Encoding::Base58).unwrap();
+    let output_b58 = smush::encode(
+        &output_raw,
+        smush::Encoding::Base58,
+        smush::Quality::Default,
+    )
+    .unwrap();
     let output_txt = String::from_utf8(output_b58).unwrap();
 
     Identity {

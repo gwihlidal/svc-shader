@@ -24,7 +24,7 @@ pub fn compute_identity(data: &[u8]) -> String {
 
     // read hash digest and consume hasher
     let data = hasher.result().to_vec();
-    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    let data = smush::encode(&data, smush::Encoding::Base58, smush::Quality::Default).unwrap();
     String::from_utf8(data).unwrap()
 }
 
@@ -79,7 +79,7 @@ pub fn compute_file_identity<P: AsRef<Path>>(path: P) -> io::Result<String> {
 
     // read hash digest and consume hasher
     let data = hasher.result().to_vec();
-    let data = smush::encode_data(&data, smush::Encoding::Base58).unwrap();
+    let data = smush::encode(&data, smush::Encoding::Base58, smush::Quality::Default).unwrap();
     Ok(String::from_utf8(data).unwrap())
 }
 

@@ -9,10 +9,12 @@ extern crate yansi;
 #[macro_use]
 extern crate log;
 extern crate chrono;
+extern crate elapsed;
 extern crate fern;
 extern crate flatbuffers;
 extern crate smush;
 
+use elapsed::ElapsedDuration;
 use scoped_threadpool::Pool;
 use std::collections::hash_map::HashMap;
 use std::fs::File;
@@ -20,6 +22,7 @@ use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use structopt::StructOpt;
 use svc_shader::client::transport;
 use svc_shader::compile::*;
@@ -685,6 +688,8 @@ fn validate_artifact(artifact: &mut ShaderArtifact, config: &transport::Config) 
 }
 
 fn process() -> Result<()> {
+    let time_total_start = Instant::now();
+
     std::env::set_var("RUST_BACKTRACE", "1");
 
     let process_opt = Options::from_args();
@@ -722,11 +727,21 @@ fn process() -> Result<()> {
 
     let mut thread_pool = Pool::new(8);
 
+    info!(
+        "Loading shader manifest: {:?}",
+        &process_opt.input.as_path()
+    );
+
     // Load shader manifest from toml path
+    let time_manifest_start = Instant::now();
     let manifest = load_manifest(&base_path, &process_opt.input.as_path())?;
+    let time_manifest_elapsed = ElapsedDuration::new(time_manifest_start.elapsed());
 
     let mut merkle_entries: Vec<ParsedShaderEntry> = Vec::with_capacity(manifest.entries.len());
     let mut active_identities: Vec<String> = Vec::with_capacity(manifest.entries.len() * 16);
+
+    info!("Generate merkle identity tree of shader files");
+    let time_merkle_start = Instant::now();
 
     for ShaderEntry {
         ref name,
@@ -818,10 +833,16 @@ fn process() -> Result<()> {
     active_identities.sort_by(|a, b| a.cmp(&b));
     active_identities.dedup_by(|a, b| a.eq(&b));
 
+    let time_merkle_elapsed = ElapsedDuration::new(time_merkle_start.elapsed());
+
     // Query what identities are missing from the remote endpoint.
+    info!("Querying missing identities from remote endpoint");
+    let time_query_start = Instant::now();
     let missing_identities = transport::query_missing_identities(&config, &active_identities)?;
+    let time_query_elapsed = ElapsedDuration::new(time_query_start.elapsed());
 
     // Upload missing identities to the remote endpoint.
+    let time_upload_start = Instant::now();
     if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for missing_identity in &missing_identities {
@@ -845,10 +866,13 @@ fn process() -> Result<()> {
             assert_eq!(missing_identity, &uploaded_identity);
         }
     }
+    let time_upload_elapsed = ElapsedDuration::new(time_upload_start.elapsed());
 
     let records: Arc<RwLock<Vec<ShaderRecord>>> = Arc::new(RwLock::new(Vec::new()));
 
     // Compile HLSL -> DXIL
+    info!("Compiling HLSL -> DXIL");
+    let time_hlsl_to_dxil_start = Instant::now();
     if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
@@ -865,8 +889,11 @@ fn process() -> Result<()> {
             compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry)?;
         }
     }
+    let time_hlsl_to_dxil_elapsed = ElapsedDuration::new(time_hlsl_to_dxil_start.elapsed());
 
     // Compile HLSL -> SPIR-V
+    info!("Compiling HLSL -> SPIR-V");
+    let time_hlsl_to_spirv_start = Instant::now();
     if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
@@ -883,8 +910,11 @@ fn process() -> Result<()> {
             compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
         }
     }
+    let time_hlsl_to_spirv_elapsed = ElapsedDuration::new(time_hlsl_to_spirv_start.elapsed());
 
     // Compile GLSL -> SPIR-V
+    info!("Compiling GLSL -> SPIR-V");
+    let time_glsl_to_spirv_start = Instant::now();
     if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
@@ -901,8 +931,11 @@ fn process() -> Result<()> {
             compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
         }
     }
+    let time_glsl_to_spirv_elapsed = ElapsedDuration::new(time_glsl_to_spirv_start.elapsed());
 
+    let time_validate_start = Instant::now();
     if process_opt.validate {
+        info!("Validating shader artifacts");
         let mut records = records.write().unwrap();
         if process_opt.parallel {
             thread_pool.scoped(|scoped| {
@@ -923,8 +956,11 @@ fn process() -> Result<()> {
             }
         }
     }
+    let time_validate_elapsed = ElapsedDuration::new(time_validate_start.elapsed());
 
+    let time_download_start = Instant::now();
     if process_opt.download || (process_opt.output.is_some() && process_opt.embed) {
+        info!("Downloading shader artifacts to local cache");
         let records = records.read().unwrap();
         for record in &*records {
             if !record.artifacts.is_empty() {
@@ -974,8 +1010,11 @@ fn process() -> Result<()> {
             }
         }
     }
+    let time_download_elapsed = ElapsedDuration::new(time_download_start.elapsed());
 
+    let time_archive_start = Instant::now();
     if let Some(ref output_path) = process_opt.output {
+        info!("Generating shader manifest archive");
         let records = records.read().unwrap();
         let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
         let manifest_shaders: Vec<_> = records
@@ -1034,9 +1073,29 @@ fn process() -> Result<()> {
 
         manifest_builder.finish(manifest, None);
         let manifest_data = manifest_builder.finished_data();
+
+        info!("Saving shader manifest archive: {:?}", &output_path);
         let manifest_file = File::create(output_path)?;
         let mut manifest_writer = BufWriter::new(manifest_file);
         manifest_writer.write_all(&manifest_data)?;
+    }
+    let time_archive_elapsed = ElapsedDuration::new(time_archive_start.elapsed());
+
+    let time_total_elapsed = ElapsedDuration::new(time_total_start.elapsed());
+    info!("Shader compilation succeeded");
+    let timings = true;
+    if timings {
+        println!("Timings (total: {}):", time_total_elapsed);
+        println!("  Load Manifest: {}", time_manifest_elapsed);
+        println!("  Merkle Build: {}", time_merkle_elapsed);
+        println!("  Query Missing: {}", time_query_elapsed);
+        println!("  Upload Missing: {}", time_upload_elapsed);
+        println!("  HLSL to DXIL: {}", time_hlsl_to_dxil_elapsed);
+        println!("  HLSL to SPIR-V: {}", time_hlsl_to_spirv_elapsed);
+        println!("  GLSL to SPIR-V: {}", time_glsl_to_spirv_elapsed);
+        println!("  Validate Artifacts: {}", time_validate_elapsed);
+        println!("  Download Artifacts: {}", time_download_elapsed);
+        println!("  Export Artifacts: {}", time_archive_elapsed);
     }
 
     Ok(())
