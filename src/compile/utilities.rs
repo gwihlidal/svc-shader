@@ -48,7 +48,7 @@ pub fn parse_dxc_profile_version(
             | drivers::dxc::TargetProfile::RayIntersection
             | drivers::dxc::TargetProfile::RayClosestHit
             | drivers::dxc::TargetProfile::RayAnyHit
-            | drivers::dxc::TargetProfile::RayMiss => (profile, drivers::dxc::TargetVersion::V64),
+            | drivers::dxc::TargetProfile::RayMiss => (profile, drivers::dxc::TargetVersion::V63),
             _ => (profile, drivers::dxc::TargetVersion::V60),
         }
     }
