@@ -2,7 +2,7 @@
 # https://www.wihlidal.com/blog/pipeline/2018-09-16-dxil-signing-post-compile/
 # https://www.wihlidal.com/blog/pipeline/2018-09-17-linux-fxc-docker/
 
-FROM gwihlidal/docker-shader:vk_rt3
+FROM gwihlidal/docker-shader:vk_rt8
 
 # Prevents annoying debconf errors during builds
 ARG DEBIAN_FRONTEND="noninteractive"
