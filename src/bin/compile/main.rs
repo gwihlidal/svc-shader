@@ -1,3 +1,5 @@
+#![windows_subsystem = "console"]
+
 extern crate chashmap;
 extern crate include_merkle;
 extern crate scoped_threadpool;
@@ -12,15 +14,18 @@ extern crate chrono;
 extern crate elapsed;
 extern crate fern;
 extern crate flatbuffers;
+#[cfg(target_os = "windows")]
+extern crate hassle_rs;
 extern crate smush;
 
 use elapsed::ElapsedDuration;
+#[cfg(target_os = "windows")]
+use hassle_rs::Dxil;
 use scoped_threadpool::Pool;
 use std::collections::hash_map::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use structopt::StructOpt;
@@ -28,7 +33,7 @@ use svc_shader::client::transport;
 use svc_shader::compile::*;
 use svc_shader::error::{Error, Result};
 use svc_shader::proto::drivers;
-use svc_shader::utilities::{path_exists, read_file};
+use svc_shader::utilities::{compute_identity, path_exists, read_file};
 
 mod generated;
 use crate::generated::service::shader::schema;
@@ -74,6 +79,10 @@ struct Options {
     #[structopt(short = "a", long = "validate")]
     validate: bool,
 
+    /// Validate artifacts (local)
+    #[structopt(short = "l", long = "local-validate")]
+    local_validate: bool,
+
     /// Service remote endpoint (defaults to 127.0.0.1:63999)
     #[structopt(short = "t", long = "endpoint")]
     endpoint: Option<String>,
@@ -115,6 +124,58 @@ fn cache_if_missing(cache_path: &Path, identity: &str, data: &[u8]) -> Result<()
 fn fetch_from_cache(cache_path: &Path, identity: &str) -> Result<Vec<u8>> {
     let data_path = cache_path.join(&identity);
     Ok(read_file(&data_path)?)
+}
+
+#[repr(C)]
+pub struct MinimalDxilHeader {
+    four_cc: u32,
+    hash_digest: [u32; 4],
+}
+
+const DXIL_HEADER_SIZE: usize = std::mem::size_of::<MinimalDxilHeader>();
+
+pub fn get_dxil_digest(buffer: &[u8]) -> Result<[u32; 4]> {
+    assert_eq!(DXIL_HEADER_SIZE, 20);
+    if buffer.len() < DXIL_HEADER_SIZE {
+        Err(Error::bug("invalid dxil header"))
+    } else {
+        let buffer_ptr: *const u8 = buffer.as_ptr();
+        let header_ptr: *const MinimalDxilHeader = buffer_ptr as *const _;
+        let header_ref: &MinimalDxilHeader = unsafe { &*header_ptr };
+        let digest: [u32; 4] = [
+            header_ref.hash_digest[0],
+            header_ref.hash_digest[1],
+            header_ref.hash_digest[2],
+            header_ref.hash_digest[3],
+        ];
+        Ok(digest)
+    }
+}
+
+pub fn has_dxil_digest(buffer: &[u8]) -> Result<bool> {
+    let hash_digest = get_dxil_digest(buffer)?;
+    let mut has_digest = false;
+    has_digest |= hash_digest[0] != 0x0;
+    has_digest |= hash_digest[1] != 0x0;
+    has_digest |= hash_digest[2] != 0x0;
+    has_digest |= hash_digest[3] != 0x0;
+    Ok(has_digest)
+}
+
+pub fn zero_dxil_digest(buffer: &mut [u8]) -> Result<()> {
+    assert_eq!(DXIL_HEADER_SIZE, 20);
+    if buffer.len() < DXIL_HEADER_SIZE {
+        Err(Error::bug("invalid dxil header"))
+    } else {
+        let buffer_ptr: *mut u8 = buffer.as_mut_ptr();
+        let header_ptr: *mut MinimalDxilHeader = buffer_ptr as *mut _;
+        let header_mut: &mut MinimalDxilHeader = unsafe { &mut *header_ptr };
+        header_mut.hash_digest[0] = 0x0;
+        header_mut.hash_digest[1] = 0x0;
+        header_mut.hash_digest[2] = 0x0;
+        header_mut.hash_digest[3] = 0x0;
+        Ok(())
+    }
 }
 
 fn main() {
@@ -653,6 +714,89 @@ fn compile_glsl_to_spirv(
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) -> Result<()> {
+    let dxil = Dxil::new();
+    let validator = dxil.create_validator();
+
+    match validator {
+        Ok(mut validator) => {
+            let version = validator.version().unwrap_or_else(|_| (0, 0));
+            info!("DXIL validation version: {}.{}", version.0, version.1);
+            for record in &mut *records {
+                for artifact in &mut record.artifacts {
+                    if !artifact.validated {
+                        match artifact.output {
+                            schema::OutputFormat::Dxil => {
+                                // Artifact with unsigned DXIL
+                                let unsigned_identity = artifact.identity.to_owned();
+                                info!("Signing DXIL: {}", &unsigned_identity);
+                                let mut input_data =
+                                    fetch_from_cache(cache_path, &unsigned_identity)?;
+                                zero_dxil_digest(&mut input_data)?;
+                                match validator.validate_slice(&input_data) {
+                                    Ok((output_data, errors)) => {
+                                        if errors.is_empty() {
+                                            // Make sure the DXIL is now signed
+                                            if has_dxil_digest(&output_data)
+                                                .unwrap_or_else(|_| false)
+                                            {
+                                                println!(
+                                                    "  DXIL is now signed - digest: {:?}",
+                                                    get_dxil_digest(&output_data)?
+                                                );
+                                            } else {
+                                                return Err(Error::bug(format!(
+                                                    "validation failed - data is not signed",
+                                                )));
+                                            }
+
+                                            artifact.identity = compute_identity(&output_data);
+                                            cache_if_missing(
+                                                cache_path,
+                                                &artifact.identity,
+                                                &output_data,
+                                            )?;
+                                            artifact.validated = true;
+                                        } else {
+                                            return Err(Error::bug(format!(
+                                                "validation failed - {:}",
+                                                errors
+                                            )));
+                                        }
+                                    }
+                                    Err(err) => {
+                                        return Err(Error::bug(format!(
+                                            "error validating DXIL - {:?}",
+                                            err
+                                        )));
+                                    }
+                                }
+                            }
+                            schema::OutputFormat::Spirv => {
+                                // Artifact with SPIR-V - run spirv-val?
+                                // https://vulkan.lunarg.com/doc/view/1.1.92.1/linux/spirv_toolchain.html
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        }
+        Err(err) => Err(Error::bug(format!(
+            "error creating DXIL validator - {:?}",
+            err
+        ))),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) -> Result<()> {
+    Ok(())
+}
+
 fn validate_artifact(artifact: &mut ShaderArtifact, config: &transport::Config) -> Result<()> {
     if !artifact.validated {
         match artifact.output {
@@ -959,7 +1103,10 @@ fn process() -> Result<()> {
     let time_validate_elapsed = ElapsedDuration::new(time_validate_start.elapsed());
 
     let time_download_start = Instant::now();
-    if process_opt.download || (process_opt.output.is_some() && process_opt.embed) {
+    if process_opt.download
+        || process_opt.local_validate
+        || (process_opt.output.is_some() && process_opt.embed)
+    {
         info!("Downloading shader artifacts to local cache");
         let records = records.read().unwrap();
         for record in &*records {
@@ -1011,6 +1158,14 @@ fn process() -> Result<()> {
         }
     }
     let time_download_elapsed = ElapsedDuration::new(time_download_start.elapsed());
+
+    let time_local_validate_start = Instant::now();
+    if process_opt.local_validate {
+        info!("Validating shader artifacts (local)");
+        let mut records = records.write().unwrap();
+        local_validate_artifacts(&cache_path, &mut records)?;
+    }
+    let time_local_validate_elapsed = ElapsedDuration::new(time_local_validate_start.elapsed());
 
     let time_archive_start = Instant::now();
     if let Some(ref output_path) = process_opt.output {
@@ -1093,7 +1248,8 @@ fn process() -> Result<()> {
         println!("  HLSL to DXIL: {}", time_hlsl_to_dxil_elapsed);
         println!("  HLSL to SPIR-V: {}", time_hlsl_to_spirv_elapsed);
         println!("  GLSL to SPIR-V: {}", time_glsl_to_spirv_elapsed);
-        println!("  Validate Artifacts: {}", time_validate_elapsed);
+        println!("  Remote Validation: {}", time_validate_elapsed);
+        println!("  Local Validation: {}", time_local_validate_elapsed);
         println!("  Download Artifacts: {}", time_download_elapsed);
         println!("  Export Artifacts: {}", time_archive_elapsed);
     }

@@ -44,10 +44,10 @@ pub fn sign_dxil(input: &[u8], temp_path: &Path) -> Result<(Vec<u8>, String)> {
     let (command, mut args) = wine_wrap(SIGN_PATH.to_string());
 
     args.push("--input".to_string());
-    args.push(input_handle.as_str());
+    args.push(input_path.to_string_lossy().to_string());
 
     args.push("--output".to_string());
-    args.push(output_handle.as_str());
+    args.push(output_path.to_string_lossy().to_string());
 
     let mut output = Command::new(command);
     for arg in &args {
