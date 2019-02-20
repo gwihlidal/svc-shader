@@ -1,0 +1,6 @@
+[[entries]]
+name = "ClosestHit"
+profile = "chit_6_3"
+entry_point = "main"
+entry_file = "data/closest_hit.hlsl"
+output = ["dxil", "spirv"]
