@@ -1,8 +1,9 @@
 # https://www.wihlidal.com/blog/pipeline/2018-09-15-linux-dxc-docker/
 # https://www.wihlidal.com/blog/pipeline/2018-09-16-dxil-signing-post-compile/
 # https://www.wihlidal.com/blog/pipeline/2018-09-17-linux-fxc-docker/
+# https://www.wihlidal.com/blog/pipeline/2018-12-28-containerized_shader_compilers/
 
-FROM gwihlidal/docker-shader:vk_rt8
+FROM gwihlidal/docker-shader:5
 
 # Prevents annoying debconf errors during builds
 ARG DEBIAN_FRONTEND="noninteractive"
@@ -13,9 +14,6 @@ RUN apt update && apt install -y \
 		libssl-dev \
 		pkg-config \
 		curl \
-		# TODO: Temp due to badness in zstd-rs
-		clang \
-		libclang-dev \
 	# Clean up
 	&& apt autoremove -y \
 	&& apt autoclean \
