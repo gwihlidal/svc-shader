@@ -446,6 +446,8 @@ fn compile_hlsl_to_spirv(
             dx_position_w: false,
             invert_y: false,
             resource_layout: drivers::dxc::VulkanResourceLayout::Dx as i32,
+            binding_shifts: Vec::new(), // TODO: Make configurable
+            /*
             binding_shifts: vec![
                 drivers::dxc::VulkanBindingShift {
                     binding_type: drivers::dxc::VulkanBindingType::B as i32,
@@ -528,6 +530,7 @@ fn compile_hlsl_to_spirv(
                     space: 3,
                 },
             ],
+            */
             binding_registers: Vec::new(),
             opt_config: Vec::new(),
             debug_info: Vec::new(),
