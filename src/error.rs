@@ -145,8 +145,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<tower_grpc::Error> for Error {
-    fn from(err: tower_grpc::Error) -> Self {
+impl From<tower_grpc::Status> for Error {
+    fn from(err: tower_grpc::Status) -> Self {
         Error::grpc(err)
         //Error::from(Context::new(ErrorKind::Grpc))
     }

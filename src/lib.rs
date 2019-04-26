@@ -1,20 +1,19 @@
 extern crate regex;
 #[macro_use]
 extern crate lazy_static;
+extern crate bincode;
+extern crate dotenv;
+extern crate failure;
 extern crate filebuffer;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate glob;
 extern crate normalize_line_endings;
 extern crate prost;
+extern crate prost_derive;
+extern crate prost_types;
 extern crate sha2;
 extern crate smush;
-#[macro_use]
-extern crate prost_derive;
-extern crate bincode;
-extern crate dotenv;
-extern crate failure;
-extern crate prost_types;
 extern crate tower_grpc;
 extern crate uuid;
 #[macro_use]

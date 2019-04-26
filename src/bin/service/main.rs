@@ -8,7 +8,6 @@ extern crate futures_cpupool;
 extern crate prost;
 extern crate prost_types;
 extern crate tokio;
-extern crate tokio_connect;
 extern crate tower_grpc;
 extern crate tower_h2;
 extern crate tower_util;
@@ -42,7 +41,6 @@ use svc_shader::utilities::{
 };
 use tokio::executor::DefaultExecutor;
 use tokio::net::TcpListener;
-use tower_grpc::Error as GrpcError;
 use tower_grpc::Request as GrpcRequest;
 use tower_grpc::Response as GrpcResponse;
 use tower_h2::Server;
@@ -72,71 +70,63 @@ impl ServiceBackend {}
 unsafe impl Send for ServiceBackend {}
 unsafe impl Sync for ServiceBackend {}
 
+type GrpcFuture<T> =
+    Box<dyn Future<Item = tower_grpc::Response<T>, Error = tower_grpc::Status> + Send>;
+type GrpcStream<T> = Box<dyn Stream<Item = T, Error = tower_grpc::Status> + Send>;
+
 impl proto::service::server::Shader for ServiceBackend {
-    type QueryStream = Box<Stream<Item = proto::common::StorageState, Error = GrpcError> + Send>;
-    type QueryFuture = future::FutureResult<GrpcResponse<Self::QueryStream>, GrpcError>;
+    type QueryStream = GrpcStream<proto::common::StorageState>;
+    type QueryFuture = GrpcFuture<Self::QueryStream>;
 
-    type UploadFuture = Box<
-        future::Future<Item = GrpcResponse<proto::common::StorageIdentity>, Error = GrpcError>
-            + Send,
-    >;
+    type UploadFuture = GrpcFuture<proto::common::StorageIdentity>;
 
-    type DownloadStream =
-        Box<Stream<Item = proto::common::StorageContent, Error = GrpcError> + Send>;
-    type DownloadFuture = future::FutureResult<GrpcResponse<Self::DownloadStream>, GrpcError>;
+    type DownloadStream = GrpcStream<proto::common::StorageContent>;
+    type DownloadFuture = GrpcFuture<Self::DownloadStream>;
 
-    type CompileStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = GrpcError> + Send>;
-    type CompileFuture = future::FutureResult<GrpcResponse<Self::CompileStream>, GrpcError>;
+    type CompileStream = GrpcStream<proto::service::ProcessOutput>;
+    type CompileFuture = GrpcFuture<Self::CompileStream>;
 
-    type SignDxilStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = tower_grpc::Error> + Send>;
-    type SignDxilFuture = future::FutureResult<GrpcResponse<Self::SignDxilStream>, GrpcError>;
+    type SignDxilStream = GrpcStream<proto::service::ProcessOutput>;
+    type SignDxilFuture = GrpcFuture<Self::SignDxilStream>;
 
-    type CompileDxcStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = tower_grpc::Error> + Send>;
-    type CompileDxcFuture = future::FutureResult<GrpcResponse<Self::CompileDxcStream>, GrpcError>;
+    type CompileDxcStream = GrpcStream<proto::service::ProcessOutput>;
+    type CompileDxcFuture = GrpcFuture<Self::CompileDxcStream>;
 
-    type CompileFxcStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = tower_grpc::Error> + Send>;
-    type CompileFxcFuture = future::FutureResult<GrpcResponse<Self::CompileFxcStream>, GrpcError>;
+    type CompileFxcStream = GrpcStream<proto::service::ProcessOutput>;
+    type CompileFxcFuture = GrpcFuture<Self::CompileFxcStream>;
 
-    type CompileGlslcStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = tower_grpc::Error> + Send>;
-    type CompileGlslcFuture =
-        future::FutureResult<GrpcResponse<Self::CompileGlslcStream>, GrpcError>;
+    type CompileGlslcStream = GrpcStream<proto::service::ProcessOutput>;
+    type CompileGlslcFuture = GrpcFuture<Self::CompileGlslcStream>;
 
-    type DisassembleSpirvStream =
-        Box<Stream<Item = proto::service::ProcessOutput, Error = tower_grpc::Error> + Send>;
-    type DisassembleSpirvFuture =
-        future::FutureResult<GrpcResponse<Self::DisassembleSpirvStream>, GrpcError>;
+    type DisassembleSpirvStream = GrpcStream<proto::service::ProcessOutput>;
+    type DisassembleSpirvFuture = GrpcFuture<Self::DisassembleSpirvStream>;
 
     fn query(
         &mut self,
         request: GrpcRequest<tower_grpc::Streaming<proto::common::StorageIdentity>>,
     ) -> Self::QueryFuture {
         let context = self.context.clone();
-        future::ok(GrpcResponse::new(Box::new(request.into_inner().map(
-            move |identity| {
-                let content_path = context.storage_path.join(&identity.sha256_base58);
-                match std::fs::metadata(&content_path) {
-                    Ok(ref meta_data) => {
-                        proto::common::StorageState {
-                            identity: Some(identity),
-                            exists: true,
-                            length: meta_data.len(),
-                            meta_data: HashMap::new(), // TODO: Add support
-                        }
-                    }
-                    Err(_) => proto::common::StorageState {
+        let rx = request.into_inner().map(move |identity| {
+            let content_path = context.storage_path.join(&identity.sha256_base58);
+            match std::fs::metadata(&content_path) {
+                Ok(ref meta_data) => {
+                    proto::common::StorageState {
                         identity: Some(identity),
-                        exists: false,
-                        length: 0,
-                        meta_data: HashMap::new(),
-                    },
+                        exists: true,
+                        length: meta_data.len(),
+                        meta_data: HashMap::new(), // TODO: Add support
+                    }
                 }
-            },
-        ))))
+                Err(_) => proto::common::StorageState {
+                    identity: Some(identity),
+                    exists: false,
+                    length: 0,
+                    meta_data: HashMap::new(),
+                },
+            }
+        });
+        let res = GrpcResponse::new(Box::new(rx) as Self::QueryStream);
+        Box::new(future::ok(res))
     }
 
     fn upload(
@@ -174,7 +164,7 @@ impl proto::service::server::Shader for ServiceBackend {
                         )));
                         assert!(upload_context.writer.is_some());
                         upload_context.content_encoding = request.encoding.clone();
-                        upload_context.content_type = request.type_.clone();
+                        upload_context.content_type = request.r#type.clone();
                     }
 
                     if let Some(writer) = &mut upload_context.writer {
@@ -183,7 +173,7 @@ impl proto::service::server::Shader for ServiceBackend {
                         }
                     }
 
-                    Ok::<_, tower_grpc::Error>((upload_context, Some(request)))
+                    Ok::<_, tower_grpc::Status>((upload_context, Some(request)))
                 },
             )
             // Map the response to a gRPC response
@@ -235,7 +225,7 @@ impl proto::service::server::Shader for ServiceBackend {
                 sha256_base58: identity,
             }),
             encoding: "identity".to_string(),
-            type_: "application/octet-stream".to_string(),
+            r#type: "application/octet-stream".to_string(),
             total_length: content_data.len() as u64,
             ..Default::default()
         };
@@ -251,7 +241,8 @@ impl proto::service::server::Shader for ServiceBackend {
             .collect();
 
         let download_chunk_stream = futures::stream::iter_ok(download_chunks);
-        future::ok(GrpcResponse::new(Box::new(download_chunk_stream)))
+        let res = GrpcResponse::new(Box::new(download_chunk_stream) as Self::DownloadStream);
+        Box::new(future::ok(res))
     }
 
     fn compile(
@@ -278,8 +269,13 @@ impl proto::service::server::Shader for ServiceBackend {
             }
         });
 
-        let rx = rx.map_err(|_| unimplemented!());
-        future::ok(GrpcResponse::new(Box::new(rx)))
+        let _rx = rx.map_err(|_| unimplemented!());
+        //let res = GrpcResponse::new(Box::new(rx) as Self::CompileStream);
+        //Box::new(future::ok(res))
+        Box::new(future::err(tower_grpc::Status::new(
+            tower_grpc::Code::Unimplemented,
+            "unimplemented_call",
+        )))
     }
 
     fn sign_dxil(
@@ -287,20 +283,19 @@ impl proto::service::server::Shader for ServiceBackend {
         request: GrpcRequest<proto::drivers::sign::SignRequest>,
     ) -> Self::SignDxilFuture {
         let context = self.context.clone();
-        match process::sign_dxil(
+        let output = match process::sign_dxil(
             &context.transform_path,
             &context.storage_path,
             &context.temp_path,
             request.get_ref(),
         ) {
-            Ok(output) => {
-                let output_stream = futures::stream::iter_ok(output);
-                future::ok(GrpcResponse::new(Box::new(output_stream)))
-            }
-            Err(err) => future::ok(GrpcResponse::new(Box::new(futures::stream::iter_ok(vec![
-                make_process_error("Error", &err.to_string()),
-            ])))),
-        }
+            Ok(output) => output,
+            Err(err) => vec![make_process_error("Error", &err.to_string())],
+        };
+
+        let output_stream = futures::stream::iter_ok(output);
+        let res = GrpcResponse::new(Box::new(output_stream) as Self::DisassembleSpirvStream);
+        Box::new(future::ok(res))
     }
 
     fn compile_dxc(
@@ -308,20 +303,19 @@ impl proto::service::server::Shader for ServiceBackend {
         request: GrpcRequest<proto::drivers::dxc::CompileRequest>,
     ) -> Self::CompileDxcFuture {
         let context = self.context.clone();
-        match process::compile_dxc(
+        let output = match process::compile_dxc(
             &context.transform_path,
             &context.storage_path,
             &context.temp_path,
             request.get_ref(),
         ) {
-            Ok(output) => {
-                let output_stream = futures::stream::iter_ok(output);
-                future::ok(GrpcResponse::new(Box::new(output_stream)))
-            }
-            Err(err) => future::ok(GrpcResponse::new(Box::new(futures::stream::iter_ok(vec![
-                make_process_error("Error", &err.to_string()),
-            ])))),
-        }
+            Ok(output) => output,
+            Err(err) => vec![make_process_error("Error", &err.to_string())],
+        };
+
+        let output_stream = futures::stream::iter_ok(output);
+        let res = GrpcResponse::new(Box::new(output_stream) as Self::DisassembleSpirvStream);
+        Box::new(future::ok(res))
     }
 
     fn compile_fxc(
@@ -329,20 +323,19 @@ impl proto::service::server::Shader for ServiceBackend {
         request: GrpcRequest<proto::drivers::fxc::CompileRequest>,
     ) -> Self::CompileFxcFuture {
         let context = self.context.clone();
-        match process::compile_fxc(
+        let output = match process::compile_fxc(
             &context.transform_path,
             &context.storage_path,
             &context.temp_path,
             request.get_ref(),
         ) {
-            Ok(output) => {
-                let output_stream = futures::stream::iter_ok(output);
-                future::ok(GrpcResponse::new(Box::new(output_stream)))
-            }
-            Err(err) => future::ok(GrpcResponse::new(Box::new(futures::stream::iter_ok(vec![
-                make_process_error("Error", &err.to_string()),
-            ])))),
-        }
+            Ok(output) => output,
+            Err(err) => vec![make_process_error("Error", &err.to_string())],
+        };
+
+        let output_stream = futures::stream::iter_ok(output);
+        let res = GrpcResponse::new(Box::new(output_stream) as Self::DisassembleSpirvStream);
+        Box::new(future::ok(res))
     }
 
     fn compile_glslc(
@@ -350,20 +343,19 @@ impl proto::service::server::Shader for ServiceBackend {
         request: GrpcRequest<proto::drivers::shaderc::CompileRequest>,
     ) -> Self::CompileGlslcFuture {
         let context = self.context.clone();
-        match process::compile_shaderc(
+        let output = match process::compile_shaderc(
             &context.transform_path,
             &context.storage_path,
             &context.temp_path,
             request.get_ref(),
         ) {
-            Ok(output) => {
-                let output_stream = futures::stream::iter_ok(output);
-                future::ok(GrpcResponse::new(Box::new(output_stream)))
-            }
-            Err(err) => future::ok(GrpcResponse::new(Box::new(futures::stream::iter_ok(vec![
-                make_process_error("Error", &err.to_string()),
-            ])))),
-        }
+            Ok(output) => output,
+            Err(err) => vec![make_process_error("Error", &err.to_string())],
+        };
+
+        let output_stream = futures::stream::iter_ok(output);
+        let res = GrpcResponse::new(Box::new(output_stream) as Self::DisassembleSpirvStream);
+        Box::new(future::ok(res))
     }
 
     fn disassemble_spirv(
@@ -371,20 +363,19 @@ impl proto::service::server::Shader for ServiceBackend {
         request: GrpcRequest<proto::drivers::spirv_dis::DisassembleRequest>,
     ) -> Self::DisassembleSpirvFuture {
         let context = self.context.clone();
-        match process::disassemble_spirv(
+        let output = match process::disassemble_spirv(
             &context.transform_path,
             &context.storage_path,
             &context.temp_path,
             request.get_ref(),
         ) {
-            Ok(output) => {
-                let output_stream = futures::stream::iter_ok(output);
-                future::ok(GrpcResponse::new(Box::new(output_stream)))
-            }
-            Err(err) => future::ok(GrpcResponse::new(Box::new(futures::stream::iter_ok(vec![
-                make_process_error("Error", &err.to_string()),
-            ])))),
-        }
+            Ok(output) => output,
+            Err(err) => vec![make_process_error("Error", &err.to_string())],
+        };
+
+        let output_stream = futures::stream::iter_ok(output);
+        let res = GrpcResponse::new(Box::new(output_stream) as Self::DisassembleSpirvStream);
+        Box::new(future::ok(res))
     }
 }
 

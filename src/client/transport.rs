@@ -1,4 +1,5 @@
 extern crate tower_http;
+extern crate tower_request_modifier;
 extern crate tower_util;
 
 use crate::error::{Error, Result};
@@ -14,10 +15,10 @@ use futures::stream::Stream;
 use std::io::Write;
 use tokio::executor::DefaultExecutor;
 use tower_grpc::codegen::client::http::Uri;
-use tower_grpc::Error as GrpcError;
+use tower_grpc::Code;
 use tower_grpc::Request;
+use tower_grpc::Status;
 use tower_h2::client;
-use tower_http::add_origin;
 use tower_util::MakeService;
 
 #[derive(Debug, Clone)]
@@ -41,12 +42,16 @@ impl EndPoint {
     }
 }
 
-impl tokio_connect::Connect for EndPoint {
-    type Connected = tokio::net::tcp::TcpStream;
+impl tower_service::Service<()> for EndPoint {
+    type Response = tokio::net::tcp::TcpStream;
     type Error = ::std::io::Error;
     type Future = tokio::net::tcp::ConnectFuture;
 
-    fn connect(&self) -> Self::Future {
+    fn poll_ready(&mut self) -> futures::Poll<(), Self::Error> {
+        Ok(().into())
+    }
+
+    fn call(&mut self, _: ()) -> Self::Future {
         tokio::net::tcp::TcpStream::connect(&self.address)
     }
 }
@@ -78,7 +83,10 @@ pub fn query_missing_identities(config: &Config, identities: &[String]) -> Resul
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -86,13 +94,7 @@ pub fn query_missing_identities(config: &Config, identities: &[String]) -> Resul
                 .query(Request::new(query_request_stream))
                 .map_err(|err| panic!("gRPC request failed; err={:?}", err))
         })
-        .map_err(|err| {
-            let status = tower_grpc::Status::with_code_and_message(
-                tower_grpc::Code::Aborted,
-                err.to_string(),
-            );
-            GrpcError::Grpc(status)
-        })
+        .map_err(|err| Status::new(Code::Aborted, err.to_string()))
         .and_then(|response_stream| {
             // Convert the stream into a plain Vec
             response_stream.into_inner().collect()
@@ -123,7 +125,7 @@ pub fn upload_identity(config: &Config, identity: &str, data: &[u8]) -> Result<S
             sha256_base58: identity.to_string(),
         }),
         encoding: "identity".to_string(),
-        type_: "application/octet-stream".to_string(),
+        r#type: "application/octet-stream".to_string(),
         total_length: data.len() as u64,
         ..Default::default()
     };
@@ -166,7 +168,10 @@ pub fn upload_identity(config: &Config, identity: &str, data: &[u8]) -> Result<S
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -217,7 +222,10 @@ pub fn download_identity(config: &Config, identity: &str) -> Result<Vec<u8>> {
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -225,13 +233,7 @@ pub fn download_identity(config: &Config, identity: &str) -> Result<Vec<u8>> {
                 .download(Request::new(request))
                 .map_err(|err| panic!("gRPC request failed; err={:?}", err))
         })
-        .map_err(|err| {
-            let status = tower_grpc::Status::with_code_and_message(
-                tower_grpc::Code::Aborted,
-                err.to_string(),
-            );
-            GrpcError::Grpc(status)
-        })
+        .map_err(|err| Status::new(Code::Aborted, err.to_string()))
         .and_then(|response_stream| {
             // Convert the stream into a plain Vec
             response_stream.into_inner().collect()
@@ -261,7 +263,7 @@ pub fn download_identity(config: &Config, identity: &str) -> Result<Vec<u8>> {
                     )));
                     assert!(download_context.writer.is_some());
                     download_context.content_encoding = content_part.encoding.clone();
-                    download_context.content_type = content_part.type_.clone();
+                    download_context.content_type = content_part.r#type.clone();
                     download_context.total_length = content_part.total_length as usize;
                 }
 
@@ -312,7 +314,10 @@ pub fn sign_dxil(config: &Config, identity: &str) -> Result<Vec<ProcessOutput>> 
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -320,13 +325,7 @@ pub fn sign_dxil(config: &Config, identity: &str) -> Result<Vec<ProcessOutput>> 
                 .sign_dxil(Request::new(request))
                 .map_err(|err| panic!("gRPC request failed; err={:?}", err))
         })
-        .map_err(|err| {
-            let status = tower_grpc::Status::with_code_and_message(
-                tower_grpc::Code::Aborted,
-                err.to_string(),
-            );
-            GrpcError::Grpc(status)
-        })
+        .map_err(|err| Status::new(Code::Aborted, err.to_string()))
         .and_then(|response_stream| {
             // Convert the stream into a plain Vec
             response_stream.into_inner().collect()
@@ -371,7 +370,10 @@ pub fn compile_dxc(
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -379,13 +381,7 @@ pub fn compile_dxc(
                 .compile_dxc(Request::new(request))
                 .map_err(|err| panic!("gRPC request failed; err={:?}", err))
         })
-        .map_err(|err| {
-            let status = tower_grpc::Status::with_code_and_message(
-                tower_grpc::Code::Aborted,
-                err.to_string(),
-            );
-            GrpcError::Grpc(status)
-        })
+        .map_err(|err| Status::new(Code::Aborted, err.to_string()))
         .and_then(|response_stream| {
             // Convert the stream into a plain Vec
             response_stream.into_inner().collect()
@@ -433,7 +429,10 @@ pub fn compile_glslc(
     let rg = make_client
         .make_service(())
         .map(move |conn| {
-            let conn = add_origin::Builder::new().uri(uri).build(conn).unwrap();
+            let conn = tower_request_modifier::Builder::new()
+                .set_origin(uri)
+                .build(conn)
+                .unwrap();
             service::client::Shader::new(conn)
         })
         .and_then(|mut client| {
@@ -441,13 +440,7 @@ pub fn compile_glslc(
                 .compile_glslc(Request::new(request))
                 .map_err(|err| panic!("gRPC request failed; err={:?}", err))
         })
-        .map_err(|err| {
-            let status = tower_grpc::Status::with_code_and_message(
-                tower_grpc::Code::Aborted,
-                err.to_string(),
-            );
-            GrpcError::Grpc(status)
-        })
+        .map_err(|err| Status::new(Code::Aborted, err.to_string()))
         .and_then(|response_stream| {
             // Convert the stream into a plain Vec
             response_stream.into_inner().collect()

@@ -33,7 +33,7 @@ use svc_shader::client::transport;
 use svc_shader::compile::*;
 use svc_shader::error::{Error, Result};
 use svc_shader::proto::drivers;
-use svc_shader::utilities::{compute_identity, path_exists, read_file};
+use svc_shader::utilities::{path_exists, read_file};
 
 mod generated;
 use crate::generated::service::shader::schema;
@@ -719,6 +719,8 @@ fn compile_glsl_to_spirv(
 
 #[cfg(target_os = "windows")]
 fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) -> Result<()> {
+    use svc_shader::utilities::compute_identity;
+
     let dxil = Dxil::new();
     let validator = dxil.create_validator();
 
@@ -796,7 +798,7 @@ fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) 
 }
 
 #[cfg(not(target_os = "windows"))]
-fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) -> Result<()> {
+fn local_validate_artifacts(_cache_path: &Path, _records: &mut Vec<ShaderRecord>) -> Result<()> {
     Ok(())
 }
 
