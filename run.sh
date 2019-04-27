@@ -1,2 +1,2 @@
-cargo run --release --bin compile -- --input tests/manifest.toml --debug --local-validate --download --parallel --base tests/data/CodeGenHLSL/Samples/MiniEngine
-cargo run --release --bin compile -- --input tests/manifest2.toml --debug --local-validate --download --base tests
+cargo run --release --bin compile -- --input tests/manifest.toml --debug --local-validate --download --parallel --base tests/data/CodeGenHLSL/Samples/MiniEngine --endpoint 127.0.0.1:63999
+cargo run --release --bin compile -- --input tests/manifest2.toml --debug --local-validate --download --base tests --endpoint 127.0.0.1:63999

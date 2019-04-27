@@ -1,5 +1,5 @@
 NS = gwihlidal
-VERSION ?= 8
+VERSION ?= 10
 
 REPO = svc-shader
 NAME = svc-shader
