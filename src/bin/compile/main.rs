@@ -363,7 +363,6 @@ fn compile_hlsl_to_dxil(
             for error in errors.lines() {
                 error!("{}", error);
             }
-            println!("GW3");
             return Err(Error::process("Compilation failed due to errors"));
         }
 
@@ -606,7 +605,6 @@ fn compile_hlsl_to_spirv(
             for error in errors.lines() {
                 error!("{}", error);
             }
-            println!("GW1");
             return Err(Error::process("Compilation failed due to errors"));
         }
 
@@ -733,7 +731,6 @@ fn compile_glsl_to_spirv(
             for error in errors.lines() {
                 error!("{}", error);
             }
-            println!("GW2");
             return Err(Error::process("Compilation failed due to errors"));
         }
 
