@@ -21,7 +21,8 @@ extern crate smush;
 use elapsed::ElapsedDuration;
 #[cfg(target_os = "windows")]
 use hassle_rs::Dxil;
-use scoped_threadpool::Pool;
+//use scoped_threadpool::Pool;
+use snailquote::unescape;
 use std::collections::hash_map::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -34,6 +35,8 @@ use svc_shader::compile::*;
 use svc_shader::error::{Error, Result};
 use svc_shader::proto::drivers;
 use svc_shader::utilities::{path_exists, read_file};
+
+use std::sync::atomic::{AtomicU32, Ordering};
 
 mod generated;
 use crate::generated::service::shader::schema;
@@ -124,6 +127,26 @@ fn cache_if_missing(cache_path: &Path, identity: &str, data: &[u8]) -> Result<()
 fn fetch_from_cache(cache_path: &Path, identity: &str) -> Result<Vec<u8>> {
     let data_path = cache_path.join(&identity);
     Ok(read_file(&data_path)?)
+}
+
+fn flatten_defines(defines: &Vec<(String, String)>) -> String {
+    let mut define_list = String::new();
+    for define in defines {
+        if define.1.is_empty() {
+            if define_list.is_empty() {
+                define_list = format!("{}", define.0);
+            } else {
+                define_list = format!("{}, {}", define_list, define.0);
+            }
+        } else {
+            if define_list.is_empty() {
+                define_list = format!("{}={}", define.0, define.1);
+            } else {
+                define_list = format!("{}, {}={}", define_list, define.0, define.1);
+            }
+        }
+    }
+    define_list
 }
 
 #[repr(C)]
@@ -250,13 +273,13 @@ fn compile_hlsl_to_dxil(
         return Ok(());
     }
 
-    info!(
+    trace!(
         "Compiling '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
         entry.profile,
         entry.name,
         entry.entry_point,
         &cache_path.join(&entry.identity),
-        entry.defines,
+        &flatten_defines(&entry.defines),
     );
 
     let mut define_map: HashMap<String, String> = HashMap::new();
@@ -333,10 +356,15 @@ fn compile_hlsl_to_dxil(
             result.name
         );
         if !result.output.is_empty() {
-            trace!("   ---\nOutput:\n---\n{}", result.output);
+            trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            error!("   ---\nErrors:\n---\n{}", result.errors);
+            let errors = unescape(&result.errors).unwrap();
+            for error in errors.lines() {
+                error!("{}", error);
+            }
+            println!("GW3");
+            return Err(Error::process("Compilation failed due to errors"));
         }
 
         if result.name == "Code" {
@@ -393,13 +421,13 @@ fn compile_hlsl_to_spirv(
         return Ok(());
     }
 
-    info!(
+    trace!(
         "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
         entry.profile,
         entry.name,
         entry.entry_point,
         &cache_path.join(&entry.identity),
-        entry.defines,
+        &flatten_defines(&entry.defines),
     );
 
     let mut define_map: HashMap<String, String> = HashMap::new();
@@ -571,10 +599,15 @@ fn compile_hlsl_to_spirv(
             result.name
         );
         if !result.output.is_empty() {
-            trace!("   ---\nOutput:\n---\n{}", result.output);
+            trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            error!("   ---\nErrors:\n---\n{}", result.errors);
+            let errors = unescape(&result.errors).unwrap();
+            for error in errors.lines() {
+                error!("{}", error);
+            }
+            println!("GW1");
+            return Err(Error::process("Compilation failed due to errors"));
         }
 
         if result.name == "Code" {
@@ -621,13 +654,13 @@ fn compile_glsl_to_spirv(
         return Ok(());
     }
 
-    info!(
+    trace!(
         "Compiling '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:?}",
         entry.profile,
         entry.name,
         entry.entry_point,
         &cache_path.join(&entry.identity),
-        entry.defines,
+        &flatten_defines(&entry.defines),
     );
 
     let mut define_map: HashMap<String, String> = HashMap::new();
@@ -693,10 +726,15 @@ fn compile_glsl_to_spirv(
             result.name
         );
         if !result.output.is_empty() {
-            trace!("   ---\nOutput:\n---\n{}", result.output);
+            trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            error!("   ---\nErrors:\n---\n{}", result.errors);
+            let errors = unescape(&result.errors).unwrap();
+            for error in errors.lines() {
+                error!("{}", error);
+            }
+            println!("GW2");
+            return Err(Error::process("Compilation failed due to errors"));
         }
 
         if result.name == "Code" {
@@ -735,7 +773,7 @@ fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) 
                             schema::OutputFormat::Dxil => {
                                 // Artifact with unsigned DXIL
                                 let unsigned_identity = artifact.identity.to_owned();
-                                info!("Signing DXIL: {}", &unsigned_identity);
+                                trace!("Signing DXIL: {}", &unsigned_identity);
                                 let mut input_data =
                                     fetch_from_cache(cache_path, &unsigned_identity)?;
                                 zero_dxil_digest(&mut input_data)?;
@@ -746,7 +784,7 @@ fn local_validate_artifacts(cache_path: &Path, records: &mut Vec<ShaderRecord>) 
                                             if has_dxil_digest(&output_data)
                                                 .unwrap_or_else(|_| false)
                                             {
-                                                println!(
+                                                trace!(
                                                     "  DXIL is now signed - digest: {:?}",
                                                     get_dxil_digest(&output_data)?
                                                 );
@@ -874,7 +912,7 @@ fn process() -> Result<()> {
         connection_window_size: process_opt.connection_window_size,
     };
 
-    let mut thread_pool = Pool::new(8);
+    //let mut thread_pool = Pool::new(8);
 
     info!(
         "Loading shader manifest: {:?}",
@@ -992,7 +1030,7 @@ fn process() -> Result<()> {
 
     // Upload missing identities to the remote endpoint.
     let time_upload_start = Instant::now();
-    if process_opt.parallel {
+    /*if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for missing_identity in &missing_identities {
                 let config = config.clone();
@@ -1006,104 +1044,133 @@ fn process() -> Result<()> {
                 });
             }
         });
-    } else {
-        for missing_identity in &missing_identities {
-            info!("Uploading missing identity: {}", missing_identity);
-            let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
-            let uploaded_identity =
-                transport::upload_identity(&config, &missing_identity, &identity_data)?;
-            assert_eq!(missing_identity, &uploaded_identity);
-        }
+    } else {*/
+    for missing_identity in &missing_identities {
+        trace!("Uploading missing identity: {}", missing_identity);
+        let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
+        let uploaded_identity =
+            transport::upload_identity(&config, &missing_identity, &identity_data)?;
+        assert_eq!(missing_identity, &uploaded_identity);
     }
+    //}
     let time_upload_elapsed = ElapsedDuration::new(time_upload_start.elapsed());
 
     let records: Arc<RwLock<Vec<ShaderRecord>>> = Arc::new(RwLock::new(Vec::new()));
+    let error_count = AtomicU32::new(0);
 
     // Compile HLSL -> DXIL
     info!("Compiling HLSL -> DXIL");
     let time_hlsl_to_dxil_start = Instant::now();
-    if process_opt.parallel {
+
+    /*if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_hlsl_to_dxil(records, &config, &cache_path, entry).unwrap(); //?;
+                    if let Err(_) = compile_hlsl_to_dxil(records, &config, &cache_path, entry) {
+                        error_count.fetch_add(1, Ordering::SeqCst);
+                    }
                 });
             }
         });
-    } else {
-        let records = records.clone();
-        for entry in &merkle_entries {
-            compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry)?;
+    } else {*/
+    let records = records.clone();
+    for entry in &merkle_entries {
+        if let Err(_) = compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry) {
+            error!(
+                "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+                entry.profile,
+                entry.name,
+                entry.entry_point,
+                &cache_path.join(&entry.identity),
+                &flatten_defines(&entry.defines),
+            );
+            return Err(Error::process("Shader compilation failed due to errors"));
         }
     }
+    //}
+
+    println!("Error count: {:?}", error_count);
+
     let time_hlsl_to_dxil_elapsed = ElapsedDuration::new(time_hlsl_to_dxil_start.elapsed());
 
     // Compile HLSL -> SPIR-V
     info!("Compiling HLSL -> SPIR-V");
     let time_hlsl_to_spirv_start = Instant::now();
-    if process_opt.parallel {
+    /*if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_hlsl_to_spirv(records, &config, &cache_path, entry).unwrap(); //?;
+                    if let Err(_) = compile_hlsl_to_spirv(records, &config, &cache_path, entry) {
+                        error_count.fetch_add(1, Ordering::SeqCst);
+                    }
                 });
             }
         });
-    } else {
-        let records = records.clone();
-        for entry in &merkle_entries {
-            compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
+    } else {*/
+    let records = records.clone();
+    for entry in &merkle_entries {
+        if let Err(_) = compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+            error_count.fetch_add(1, Ordering::SeqCst);
         }
     }
+    //}
     let time_hlsl_to_spirv_elapsed = ElapsedDuration::new(time_hlsl_to_spirv_start.elapsed());
 
     // Compile GLSL -> SPIR-V
     info!("Compiling GLSL -> SPIR-V");
     let time_glsl_to_spirv_start = Instant::now();
-    if process_opt.parallel {
+    /*if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
                 scoped.execute(move || {
-                    compile_glsl_to_spirv(records, &config, &cache_path, entry).unwrap(); //?;
+                    if let Err(_) = compile_glsl_to_spirv(records, &config, &cache_path, entry) {
+                        error_count.fetch_add(1, Ordering::SeqCst);
+                    }
                 });
             }
         });
-    } else {
-        let records = records.clone();
-        for entry in &merkle_entries {
-            compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry)?;
+    } else {*/
+    let records = records.clone();
+    for entry in &merkle_entries {
+        if let Err(_) = compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+            error_count.fetch_add(1, Ordering::SeqCst);
         }
     }
+    //}
     let time_glsl_to_spirv_elapsed = ElapsedDuration::new(time_glsl_to_spirv_start.elapsed());
 
     let time_validate_start = Instant::now();
     if process_opt.validate {
         info!("Validating shader artifacts");
         let mut records = records.write().unwrap();
-        if process_opt.parallel {
+        /*if process_opt.parallel {
             thread_pool.scoped(|scoped| {
                 for record in &mut *records {
                     let config = config.clone();
                     scoped.execute(move || {
                         for artifact in &mut record.artifacts {
-                            validate_artifact(artifact, &config).unwrap(); //?;
+                            if let Err(_) = validate_artifact(artifact, &config) {
+                                error_count.fetch_add(1, Ordering::SeqCst);
+                            }
                         }
                     });
                 }
             });
-        } else {
-            for record in &mut *records {
-                for artifact in &mut record.artifacts {
-                    validate_artifact(artifact, &config)?;
+        } else {*/
+        for record in &mut *records {
+            for artifact in &mut record.artifacts {
+                if let Err(_) = validate_artifact(artifact, &config) {
+                    error_count.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
+        //}
     }
     let time_validate_elapsed = ElapsedDuration::new(time_validate_start.elapsed());
 
@@ -1240,26 +1307,29 @@ fn process() -> Result<()> {
         manifest_writer.write_all(&manifest_data)?;
     }
     let time_archive_elapsed = ElapsedDuration::new(time_archive_start.elapsed());
-
     let time_total_elapsed = ElapsedDuration::new(time_total_start.elapsed());
-    info!("Shader compilation succeeded");
-    let timings = true;
-    if timings {
-        println!("Timings (total: {}):", time_total_elapsed);
-        println!("  Load Manifest: {}", time_manifest_elapsed);
-        println!("  Merkle Build: {}", time_merkle_elapsed);
-        println!("  Query Missing: {}", time_query_elapsed);
-        println!("  Upload Missing: {}", time_upload_elapsed);
-        println!("  HLSL to DXIL: {}", time_hlsl_to_dxil_elapsed);
-        println!("  HLSL to SPIR-V: {}", time_hlsl_to_spirv_elapsed);
-        println!("  GLSL to SPIR-V: {}", time_glsl_to_spirv_elapsed);
-        println!("  Remote Validation: {}", time_validate_elapsed);
-        println!("  Local Validation: {}", time_local_validate_elapsed);
-        println!("  Download Artifacts: {}", time_download_elapsed);
-        println!("  Export Artifacts: {}", time_archive_elapsed);
-    }
 
-    Ok(())
+    if error_count.into_inner() > 0 {
+        Err(Error::process("Shader compilation failed"))
+    } else {
+        info!("Shader compilation succeeded");
+        let timings = true;
+        if timings {
+            println!("Timings (total: {}):", time_total_elapsed);
+            println!("  Load Manifest: {}", time_manifest_elapsed);
+            println!("  Merkle Build: {}", time_merkle_elapsed);
+            println!("  Query Missing: {}", time_query_elapsed);
+            println!("  Upload Missing: {}", time_upload_elapsed);
+            println!("  HLSL to DXIL: {}", time_hlsl_to_dxil_elapsed);
+            println!("  HLSL to SPIR-V: {}", time_hlsl_to_spirv_elapsed);
+            println!("  GLSL to SPIR-V: {}", time_glsl_to_spirv_elapsed);
+            println!("  Remote Validation: {}", time_validate_elapsed);
+            println!("  Local Validation: {}", time_local_validate_elapsed);
+            println!("  Download Artifacts: {}", time_download_elapsed);
+            println!("  Export Artifacts: {}", time_archive_elapsed);
+        }
+        Ok(())
+    }
 }
 
 fn setup_logging(verbosity: u64) -> Result<()> {

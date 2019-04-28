@@ -128,7 +128,7 @@ impl fmt::Display for ErrorKind {
                               https://github.com/gwihlidal/svc-shader";
                 write!(f, "BUG: {}\n{}", msg, report)
             }
-            ErrorKind::Process(ref msg) => write!(f, "process error: {}", msg),
+            ErrorKind::Process(ref msg) => write!(f, "{}", msg),
             ErrorKind::Config(ref msg) => write!(f, "config error: {}", msg),
             ErrorKind::Io => write!(f, "I/O error"),
             ErrorKind::Grpc => write!(f, "gRPC error"),

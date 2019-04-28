@@ -291,11 +291,7 @@ impl Compiler {
 
                     Ok((output_data, stdout.to_string()))
                 } else {
-                    Err(Error::process(format!(
-                        "failed to run command - details: {:?} - {:?}",
-                        stdout.to_string(),
-                        stderr.to_string()
-                    )))
+                    Err(Error::process(stderr.to_string()))
                 }
             }
             Err(err) => {

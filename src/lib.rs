@@ -33,6 +33,7 @@ extern crate log;
 extern crate fern;
 //#[macro_use]
 extern crate flatbuffers;
+extern crate snailquote;
 extern crate structopt;
 
 pub use self::gen::*;

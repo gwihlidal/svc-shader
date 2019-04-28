@@ -1,2 +1,2 @@
 docker rm -f svc-shader || true
-docker run --detach --publish 63999:63999 --name svc-shader gwihlidal/svc-shader:10
+docker run --detach --publish 63999:63999 --name svc-shader gwihlidal/svc-shader:12

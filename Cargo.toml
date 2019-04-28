@@ -1,6 +1,6 @@
 [package]
 name = "svc-shader"
-version = "0.8.5"
+version = "0.8.6"
 authors = ["Graham Wihlidal <graham@wihlidal.ca>"]
 description = "A gRPC micro-service that exposes a variety of GPU shader compilers under a common cloud-based abstraction."
 homepage = "https://github.com/gwihlidal/svc-shader"
@@ -63,6 +63,7 @@ structopt = "0.2"
 flatbuffers = "0.6.0"
 smush = "0.1.4"
 elapsed = "0.1.2"
+snailquote = "0.2.0"
 
 [target.'cfg(windows)'.dependencies]
 #hassle-rs = "0.2.0"
