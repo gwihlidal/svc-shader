@@ -1114,6 +1114,14 @@ fn process() -> Result<()> {
                 let error_count = error_count.clone();
                 scoped.execute(move || {
                     if let Err(_) = compile_hlsl_to_spirv(records, &config, &cache_path, entry) {
+                        error!(
+                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                            entry.profile,
+                            entry.name,
+                            entry.entry_point,
+                            &cache_path.join(&entry.identity),
+                            &flatten_defines(&entry.defines),
+                        );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
                 });
@@ -1123,6 +1131,14 @@ fn process() -> Result<()> {
         let records = records.clone();
         for entry in &merkle_entries {
             if let Err(_) = compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+                error!(
+                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                    entry.profile,
+                    entry.name,
+                    entry.entry_point,
+                    &cache_path.join(&entry.identity),
+                    &flatten_defines(&entry.defines),
+                );
                 error_count.fetch_add(1, Ordering::SeqCst);
             }
         }
@@ -1140,6 +1156,14 @@ fn process() -> Result<()> {
                 let error_count = error_count.clone();
                 scoped.execute(move || {
                     if let Err(_) = compile_glsl_to_spirv(records, &config, &cache_path, entry) {
+                        error!(
+                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                            entry.profile,
+                            entry.name,
+                            entry.entry_point,
+                            &cache_path.join(&entry.identity),
+                            &flatten_defines(&entry.defines),
+                        );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
                 });
@@ -1149,6 +1173,14 @@ fn process() -> Result<()> {
         let records = records.clone();
         for entry in &merkle_entries {
             if let Err(_) = compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+                error!(
+                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                    entry.profile,
+                    entry.name,
+                    entry.entry_point,
+                    &cache_path.join(&entry.identity),
+                    &flatten_defines(&entry.defines),
+                );
                 error_count.fetch_add(1, Ordering::SeqCst);
             }
         }
