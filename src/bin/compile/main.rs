@@ -21,7 +21,7 @@ extern crate smush;
 use elapsed::ElapsedDuration;
 #[cfg(target_os = "windows")]
 use hassle_rs::Dxil;
-//use scoped_threadpool::Pool;
+use scoped_threadpool::Pool;
 use snailquote::unescape;
 use std::collections::hash_map::HashMap;
 use std::fs::File;
@@ -85,6 +85,10 @@ struct Options {
     /// Validate artifacts (local)
     #[structopt(short = "l", long = "local-validate")]
     local_validate: bool,
+
+    /// Stop on errors
+    #[structopt(short = "s", long = "stop-errors")]
+    stop_errors: bool,
 
     /// Service remote endpoint (defaults to 127.0.0.1:63999)
     #[structopt(short = "t", long = "endpoint")]
@@ -909,7 +913,7 @@ fn process() -> Result<()> {
         connection_window_size: process_opt.connection_window_size,
     };
 
-    //let mut thread_pool = Pool::new(8);
+    let mut thread_pool = Pool::new(8);
 
     info!(
         "Loading shader manifest: {:?}",
@@ -1027,7 +1031,7 @@ fn process() -> Result<()> {
 
     // Upload missing identities to the remote endpoint.
     let time_upload_start = Instant::now();
-    /*if process_opt.parallel {
+    if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for missing_identity in &missing_identities {
                 let config = config.clone();
@@ -1041,52 +1045,61 @@ fn process() -> Result<()> {
                 });
             }
         });
-    } else {*/
-    for missing_identity in &missing_identities {
-        trace!("Uploading missing identity: {}", missing_identity);
-        let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
-        let uploaded_identity =
-            transport::upload_identity(&config, &missing_identity, &identity_data)?;
-        assert_eq!(missing_identity, &uploaded_identity);
+    } else {
+        for missing_identity in &missing_identities {
+            trace!("Uploading missing identity: {}", missing_identity);
+            let identity_data = fetch_from_cache(cache_path, &missing_identity)?;
+            let uploaded_identity =
+                transport::upload_identity(&config, &missing_identity, &identity_data)?;
+            assert_eq!(missing_identity, &uploaded_identity);
+        }
     }
-    //}
     let time_upload_elapsed = ElapsedDuration::new(time_upload_start.elapsed());
 
     let records: Arc<RwLock<Vec<ShaderRecord>>> = Arc::new(RwLock::new(Vec::new()));
-    let error_count = AtomicU32::new(0);
+    let error_count = Arc::new(AtomicU32::new(0));
 
     // Compile HLSL -> DXIL
     info!("Compiling HLSL -> DXIL");
     let time_hlsl_to_dxil_start = Instant::now();
 
-    /*if process_opt.parallel {
+    if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
+                let error_count = error_count.clone();
                 scoped.execute(move || {
                     if let Err(_) = compile_hlsl_to_dxil(records, &config, &cache_path, entry) {
+                        error!(
+                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+                            entry.profile,
+                            entry.name,
+                            entry.entry_point,
+                            &cache_path.join(&entry.identity),
+                            &flatten_defines(&entry.defines),
+                        );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
                 });
             }
         });
-    } else {*/
-    let records = records.clone();
-    for entry in &merkle_entries {
-        if let Err(_) = compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry) {
-            error!(
-                "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
-                entry.profile,
-                entry.name,
-                entry.entry_point,
-                &cache_path.join(&entry.identity),
-                &flatten_defines(&entry.defines),
-            );
-            return Err(Error::process("Shader compilation failed due to errors"));
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            if let Err(_) = compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry) {
+                error!(
+                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+                    entry.profile,
+                    entry.name,
+                    entry.entry_point,
+                    &cache_path.join(&entry.identity),
+                    &flatten_defines(&entry.defines),
+                );
+                error_count.fetch_add(1, Ordering::SeqCst);
+            }
         }
     }
-    //}
 
     println!("Error count: {:?}", error_count);
 
@@ -1095,11 +1108,12 @@ fn process() -> Result<()> {
     // Compile HLSL -> SPIR-V
     info!("Compiling HLSL -> SPIR-V");
     let time_hlsl_to_spirv_start = Instant::now();
-    /*if process_opt.parallel {
+    if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
+                let error_count = error_count.clone();
                 scoped.execute(move || {
                     if let Err(_) = compile_hlsl_to_spirv(records, &config, &cache_path, entry) {
                         error_count.fetch_add(1, Ordering::SeqCst);
@@ -1107,24 +1121,25 @@ fn process() -> Result<()> {
                 });
             }
         });
-    } else {*/
-    let records = records.clone();
-    for entry in &merkle_entries {
-        if let Err(_) = compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry) {
-            error_count.fetch_add(1, Ordering::SeqCst);
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            if let Err(_) = compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+                error_count.fetch_add(1, Ordering::SeqCst);
+            }
         }
     }
-    //}
     let time_hlsl_to_spirv_elapsed = ElapsedDuration::new(time_hlsl_to_spirv_start.elapsed());
 
     // Compile GLSL -> SPIR-V
     info!("Compiling GLSL -> SPIR-V");
     let time_glsl_to_spirv_start = Instant::now();
-    /*if process_opt.parallel {
+    if process_opt.parallel {
         thread_pool.scoped(|scoped| {
             for entry in &merkle_entries {
                 let config = config.clone();
                 let records = records.clone();
+                let error_count = error_count.clone();
                 scoped.execute(move || {
                     if let Err(_) = compile_glsl_to_spirv(records, &config, &cache_path, entry) {
                         error_count.fetch_add(1, Ordering::SeqCst);
@@ -1132,24 +1147,25 @@ fn process() -> Result<()> {
                 });
             }
         });
-    } else {*/
-    let records = records.clone();
-    for entry in &merkle_entries {
-        if let Err(_) = compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry) {
-            error_count.fetch_add(1, Ordering::SeqCst);
+    } else {
+        let records = records.clone();
+        for entry in &merkle_entries {
+            if let Err(_) = compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+                error_count.fetch_add(1, Ordering::SeqCst);
+            }
         }
     }
-    //}
     let time_glsl_to_spirv_elapsed = ElapsedDuration::new(time_glsl_to_spirv_start.elapsed());
 
     let time_validate_start = Instant::now();
     if process_opt.validate {
         info!("Validating shader artifacts");
         let mut records = records.write().unwrap();
-        /*if process_opt.parallel {
+        if process_opt.parallel {
             thread_pool.scoped(|scoped| {
                 for record in &mut *records {
                     let config = config.clone();
+                    let error_count = error_count.clone();
                     scoped.execute(move || {
                         for artifact in &mut record.artifacts {
                             if let Err(_) = validate_artifact(artifact, &config) {
@@ -1159,15 +1175,15 @@ fn process() -> Result<()> {
                     });
                 }
             });
-        } else {*/
-        for record in &mut *records {
-            for artifact in &mut record.artifacts {
-                if let Err(_) = validate_artifact(artifact, &config) {
-                    error_count.fetch_add(1, Ordering::SeqCst);
+        } else {
+            for record in &mut *records {
+                for artifact in &mut record.artifacts {
+                    if let Err(_) = validate_artifact(artifact, &config) {
+                        error_count.fetch_add(1, Ordering::SeqCst);
+                    }
                 }
             }
         }
-        //}
     }
     let time_validate_elapsed = ElapsedDuration::new(time_validate_start.elapsed());
 
@@ -1236,79 +1252,84 @@ fn process() -> Result<()> {
     }
     let time_local_validate_elapsed = ElapsedDuration::new(time_local_validate_start.elapsed());
 
-    let time_archive_start = Instant::now();
-    if let Some(ref output_path) = process_opt.output {
-        info!("Generating shader manifest archive");
-        let records = records.read().unwrap();
-        let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
-        let manifest_shaders: Vec<_> = records
-            .iter()
-            .map(|shader| {
-                let name = Some(manifest_builder.create_string(&shader.name));
-                let entry = Some(manifest_builder.create_string(&shader.entry));
-                let artifacts: Vec<_> = shader
-                    .artifacts
-                    .iter()
-                    .map(|artifact| {
-                        let name = Some(manifest_builder.create_string(&artifact.name));
-                        let identity = Some(manifest_builder.create_string(&artifact.identity));
-                        let encoding = Some(manifest_builder.create_string(&artifact.encoding));
-                        let data = if process_opt.embed {
-                            let data = fetch_from_cache(cache_path, &artifact.identity)
-                                .expect("failed to fetch from cache");
-                            Some(manifest_builder.create_vector(&data))
-                        } else {
-                            None
-                        };
-                        schema::Artifact::create(
-                            &mut manifest_builder,
-                            &schema::ArtifactArgs {
-                                name,
-                                input: artifact.input,
-                                output: artifact.output,
-                                identity,
-                                encoding,
-                                profile: artifact.profile,
-                                validated: artifact.validated,
-                                data,
-                            },
-                        )
-                    })
-                    .collect();
-                let artifacts = Some(manifest_builder.create_vector(&artifacts));
-                schema::Shader::create(
-                    &mut manifest_builder,
-                    &schema::ShaderArgs {
-                        name,
-                        entry,
-                        artifacts,
-                    },
-                )
-            })
-            .collect();
-
-        let manifest_shaders = Some(manifest_builder.create_vector(&manifest_shaders));
-        let manifest = schema::Manifest::create(
-            &mut manifest_builder,
-            &schema::ManifestArgs {
-                shaders: manifest_shaders,
-            },
-        );
-
-        manifest_builder.finish(manifest, None);
-        let manifest_data = manifest_builder.finished_data();
-
-        info!("Saving shader manifest archive: {:?}", &output_path);
-        let manifest_file = File::create(output_path)?;
-        let mut manifest_writer = BufWriter::new(manifest_file);
-        manifest_writer.write_all(&manifest_data)?;
-    }
-    let time_archive_elapsed = ElapsedDuration::new(time_archive_start.elapsed());
-    let time_total_elapsed = ElapsedDuration::new(time_total_start.elapsed());
-
-    if error_count.into_inner() > 0 {
-        Err(Error::process("Shader compilation failed"))
+    // Retrieve final error count
+    let error_count = error_count.load(Ordering::SeqCst);
+    if error_count > 0 {
+        Err(Error::process(format!(
+            "Shader compilation failed - {} errors",
+            error_count
+        )))
     } else {
+        let time_archive_start = Instant::now();
+        if let Some(ref output_path) = process_opt.output {
+            info!("Generating shader manifest archive");
+            let records = records.read().unwrap();
+            let mut manifest_builder = flatbuffers::FlatBufferBuilder::new();
+            let manifest_shaders: Vec<_> = records
+                .iter()
+                .map(|shader| {
+                    let name = Some(manifest_builder.create_string(&shader.name));
+                    let entry = Some(manifest_builder.create_string(&shader.entry));
+                    let artifacts: Vec<_> = shader
+                        .artifacts
+                        .iter()
+                        .map(|artifact| {
+                            let name = Some(manifest_builder.create_string(&artifact.name));
+                            let identity = Some(manifest_builder.create_string(&artifact.identity));
+                            let encoding = Some(manifest_builder.create_string(&artifact.encoding));
+                            let data = if process_opt.embed {
+                                let data = fetch_from_cache(cache_path, &artifact.identity)
+                                    .expect("failed to fetch from cache");
+                                Some(manifest_builder.create_vector(&data))
+                            } else {
+                                None
+                            };
+                            schema::Artifact::create(
+                                &mut manifest_builder,
+                                &schema::ArtifactArgs {
+                                    name,
+                                    input: artifact.input,
+                                    output: artifact.output,
+                                    identity,
+                                    encoding,
+                                    profile: artifact.profile,
+                                    validated: artifact.validated,
+                                    data,
+                                },
+                            )
+                        })
+                        .collect();
+                    let artifacts = Some(manifest_builder.create_vector(&artifacts));
+                    schema::Shader::create(
+                        &mut manifest_builder,
+                        &schema::ShaderArgs {
+                            name,
+                            entry,
+                            artifacts,
+                        },
+                    )
+                })
+                .collect();
+
+            let manifest_shaders = Some(manifest_builder.create_vector(&manifest_shaders));
+            let manifest = schema::Manifest::create(
+                &mut manifest_builder,
+                &schema::ManifestArgs {
+                    shaders: manifest_shaders,
+                },
+            );
+
+            manifest_builder.finish(manifest, None);
+            let manifest_data = manifest_builder.finished_data();
+
+            info!("Saving shader manifest archive: {:?}", &output_path);
+            let manifest_file = File::create(output_path)?;
+            let mut manifest_writer = BufWriter::new(manifest_file);
+            manifest_writer.write_all(&manifest_data)?;
+        }
+        let time_archive_elapsed = ElapsedDuration::new(time_archive_start.elapsed());
+        let time_total_elapsed = ElapsedDuration::new(time_total_start.elapsed());
+
         info!("Shader compilation succeeded");
         let timings = true;
         if timings {
@@ -1325,6 +1346,7 @@ fn process() -> Result<()> {
             println!("  Download Artifacts: {}", time_download_elapsed);
             println!("  Export Artifacts: {}", time_archive_elapsed);
         }
+
         Ok(())
     }
 }
