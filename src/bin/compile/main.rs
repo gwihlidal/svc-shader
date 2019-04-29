@@ -1101,8 +1101,6 @@ fn process() -> Result<()> {
         }
     }
 
-    println!("Error count: {:?}", error_count);
-
     let time_hlsl_to_dxil_elapsed = ElapsedDuration::new(time_hlsl_to_dxil_start.elapsed());
 
     // Compile HLSL -> SPIR-V
