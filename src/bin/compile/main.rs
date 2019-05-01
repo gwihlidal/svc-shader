@@ -1562,7 +1562,5 @@ fn setup_logging(verbosity: u64) -> Result<()> {
         .apply()
         .unwrap();
 
-    //jobs::enqueue_shader_work(&base_path, &manifest.entries, 8);
-
     Ok(())
 }
