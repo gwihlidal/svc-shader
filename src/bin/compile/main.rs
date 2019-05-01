@@ -265,6 +265,7 @@ fn compile_hlsl_to_dxil(
     records: Arc<RwLock<Vec<ShaderRecord>>>,
     config: &transport::Config,
     cache_path: &Path,
+    identities: Arc<RwLock<Vec<(PathBuf, String)>>>,
     entry: &ParsedShaderEntry,
 ) -> Result<()> {
     if entry.language != "hlsl" {
@@ -363,7 +364,15 @@ fn compile_hlsl_to_dxil(
             trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            let errors = unescape(&result.errors).unwrap();
+            let mut errors = unescape(&result.errors).unwrap();
+
+            errors = errors.replace("/service/data/storage/", "");
+            // TODO: Very inefficient, but at least it works for now
+            let identities = identities.read().unwrap();
+            for identity in identities.iter() {
+                errors = errors.replace(&identity.1, &identity.0.to_string_lossy());
+            }
+
             for error in errors.lines() {
                 error!("{}", error);
             }
@@ -412,6 +421,7 @@ fn compile_hlsl_to_spirv(
     records: Arc<RwLock<Vec<ShaderRecord>>>,
     config: &transport::Config,
     cache_path: &Path,
+    identities: Arc<RwLock<Vec<(PathBuf, String)>>>,
     entry: &ParsedShaderEntry,
 ) -> Result<()> {
     if entry.language != "hlsl" {
@@ -605,7 +615,15 @@ fn compile_hlsl_to_spirv(
             trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            let errors = unescape(&result.errors).unwrap();
+            let mut errors = unescape(&result.errors).unwrap();
+
+            errors = errors.replace("/service/data/storage/", "");
+            // TODO: Very inefficient, but at least it works for now
+            let identities = identities.read().unwrap();
+            for identity in identities.iter() {
+                errors = errors.replace(&identity.1, &identity.0.to_string_lossy());
+            }
+
             for error in errors.lines() {
                 error!("{}", error);
             }
@@ -644,6 +662,7 @@ fn compile_glsl_to_spirv(
     records: Arc<RwLock<Vec<ShaderRecord>>>,
     config: &transport::Config,
     cache_path: &Path,
+    identities: Arc<RwLock<Vec<(PathBuf, String)>>>,
     entry: &ParsedShaderEntry,
 ) -> Result<()> {
     if entry.language != "glsl" {
@@ -731,7 +750,13 @@ fn compile_glsl_to_spirv(
             trace!("Output:\n{}", result.output);
         }
         if !result.errors.is_empty() {
-            let errors = unescape(&result.errors).unwrap();
+            let mut errors = unescape(&result.errors).unwrap();
+            errors = errors.replace("/service/data/storage/", "");
+            // TODO: Very inefficient, but at least it works for now
+            let identities = identities.read().unwrap();
+            for identity in identities.iter() {
+                errors = errors.replace(&identity.1, &identity.0.to_string_lossy());
+            }
             for error in errors.lines() {
                 error!("{}", error);
             }
@@ -880,6 +905,9 @@ fn process() -> Result<()> {
 
     std::env::set_var("RUST_BACKTRACE", "1");
 
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    //println!("Current dir is {:?}", current_dir);
+
     let process_opt = Options::from_args();
 
     let verbosity = if process_opt.debug { 1 } else { 0 };
@@ -926,7 +954,8 @@ fn process() -> Result<()> {
     let time_manifest_elapsed = ElapsedDuration::new(time_manifest_start.elapsed());
 
     let mut merkle_entries: Vec<ParsedShaderEntry> = Vec::with_capacity(manifest.entries.len());
-    let mut active_identities: Vec<String> = Vec::with_capacity(manifest.entries.len() * 16);
+    let active_identities: Arc<RwLock<Vec<(PathBuf, String)>>> =
+        Arc::new(RwLock::new(Vec::with_capacity(manifest.entries.len() * 16)));
 
     info!("Generate merkle identity tree of shader files");
     let time_merkle_start = Instant::now();
@@ -972,7 +1001,12 @@ fn process() -> Result<()> {
                     &cache_path.join(&patched_identity)
                 );
                 cache_if_missing(cache_path, &patched_identity, &patched_data).unwrap();
-                active_identities.push(patched_identity);
+                let mut active_identities = active_identities.write().unwrap();
+                let include_file = match node.include_file.strip_prefix(&current_dir) {
+                    Ok(include_file) => include_file,
+                    Err(_) => &node.include_file,
+                };
+                active_identities.push((include_file.to_owned(), patched_identity));
             });
         if let Some(ref node) = include_merkle::get_root_node(&entry_graph) {
             let patched_identity = match node.patched_identity {
@@ -1001,6 +1035,7 @@ fn process() -> Result<()> {
                 name: name.to_string(),
                 profile: profile.to_string(),
                 entry_point: entry_point.to_string(),
+                entry_file: full_path,
                 identity: patched_identity.to_string(),
                 output: output.clone(),
                 language: file_extension,
@@ -1018,15 +1053,19 @@ fn process() -> Result<()> {
     }
 
     // Remove multiple references to the same file (for efficiency).
-    active_identities.sort_by(|a, b| a.cmp(&b));
-    active_identities.dedup_by(|a, b| a.eq(&b));
+    {
+        let mut active_identities = active_identities.write().unwrap();
+        active_identities.sort_by(|a, b| a.1.cmp(&b.1));
+        active_identities.dedup_by(|a, b| a.1.eq(&b.1));
+    }
 
     let time_merkle_elapsed = ElapsedDuration::new(time_merkle_start.elapsed());
 
     // Query what identities are missing from the remote endpoint.
     info!("Querying missing identities from remote endpoint");
     let time_query_start = Instant::now();
-    let missing_identities = transport::query_missing_identities(&config, &active_identities)?;
+    let missing_identities =
+        transport::query_missing_identities(&config, &active_identities.read().unwrap())?;
     let time_query_elapsed = ElapsedDuration::new(time_query_start.elapsed());
 
     // Upload missing identities to the remote endpoint.
@@ -1056,6 +1095,11 @@ fn process() -> Result<()> {
     }
     let time_upload_elapsed = ElapsedDuration::new(time_upload_start.elapsed());
 
+    /*println!("Identities:");
+    for identity in &active_identities {
+        println!("file: {:?}, identity: {}", identity.0, identity.1);
+    }*/
+
     let records: Arc<RwLock<Vec<ShaderRecord>>> = Arc::new(RwLock::new(Vec::new()));
     let error_count = Arc::new(AtomicU32::new(0));
 
@@ -1069,15 +1113,26 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 let error_count = error_count.clone();
+                let active_identities = active_identities.clone();
                 scoped.execute(move || {
-                    if let Err(_) = compile_hlsl_to_dxil(records, &config, &cache_path, entry) {
+                    if let Err(_) = compile_hlsl_to_dxil(
+                        records,
+                        &config,
+                        &cache_path,
+                        active_identities,
+                        entry,
+                    ) {
                         error!(
-                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+                            "Failed to compile: '{}' [{}]: entry:[{}], DXIL, defines:{:#?}",
                             entry.profile,
                             entry.name,
                             entry.entry_point,
-                            &cache_path.join(&entry.identity),
                             &flatten_defines(&entry.defines),
+                        );
+                        trace!(
+                            "source:[{:?}], cache:[{:?}]",
+                            &entry.entry_file,
+                            &cache_path.join(&entry.identity)
                         );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
@@ -1087,14 +1142,24 @@ fn process() -> Result<()> {
     } else {
         let records = records.clone();
         for entry in &merkle_entries {
-            if let Err(_) = compile_hlsl_to_dxil(records.clone(), &config, &cache_path, entry) {
+            if let Err(_) = compile_hlsl_to_dxil(
+                records.clone(),
+                &config,
+                &cache_path,
+                active_identities.clone(),
+                entry,
+            ) {
                 error!(
-                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], DXIL, defines:{:#?}",
+                    "Failed to compile: '{}' [{}]: entry:[{}], DXIL, defines:{:#?}",
                     entry.profile,
                     entry.name,
                     entry.entry_point,
-                    &cache_path.join(&entry.identity),
                     &flatten_defines(&entry.defines),
+                );
+                trace!(
+                    "source:[{:?}], cache:[{:?}]",
+                    &entry.entry_file,
+                    &cache_path.join(&entry.identity)
                 );
                 error_count.fetch_add(1, Ordering::SeqCst);
             }
@@ -1112,15 +1177,26 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 let error_count = error_count.clone();
+                let active_identities = active_identities.clone();
                 scoped.execute(move || {
-                    if let Err(_) = compile_hlsl_to_spirv(records, &config, &cache_path, entry) {
+                    if let Err(_) = compile_hlsl_to_spirv(
+                        records,
+                        &config,
+                        &cache_path,
+                        active_identities,
+                        entry,
+                    ) {
                         error!(
-                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                            "Failed to compile: '{}' [{}]: entry:[{}], SPIR-V, defines:{:#?}",
                             entry.profile,
                             entry.name,
                             entry.entry_point,
-                            &cache_path.join(&entry.identity),
                             &flatten_defines(&entry.defines),
+                        );
+                        trace!(
+                            "source:[{:?}], cache:[{:?}]",
+                            &entry.entry_file,
+                            &cache_path.join(&entry.identity)
                         );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
@@ -1130,14 +1206,24 @@ fn process() -> Result<()> {
     } else {
         let records = records.clone();
         for entry in &merkle_entries {
-            if let Err(_) = compile_hlsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+            if let Err(_) = compile_hlsl_to_spirv(
+                records.clone(),
+                &config,
+                &cache_path,
+                active_identities.clone(),
+                entry,
+            ) {
                 error!(
-                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                    "Failed to compile: '{}' [{}]: entry:[{}], SPIR-V, defines:{:#?}",
                     entry.profile,
                     entry.name,
                     entry.entry_point,
-                    &cache_path.join(&entry.identity),
                     &flatten_defines(&entry.defines),
+                );
+                trace!(
+                    "source:[{:?}], cache:[{:?}]",
+                    &entry.entry_file,
+                    &cache_path.join(&entry.identity)
                 );
                 error_count.fetch_add(1, Ordering::SeqCst);
             }
@@ -1154,15 +1240,26 @@ fn process() -> Result<()> {
                 let config = config.clone();
                 let records = records.clone();
                 let error_count = error_count.clone();
+                let active_identities = active_identities.clone();
                 scoped.execute(move || {
-                    if let Err(_) = compile_glsl_to_spirv(records, &config, &cache_path, entry) {
+                    if let Err(_) = compile_glsl_to_spirv(
+                        records,
+                        &config,
+                        &cache_path,
+                        active_identities,
+                        entry,
+                    ) {
                         error!(
-                            "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                            "Failed to compile: '{}' [{}]: entry:[{}], SPIR-V, defines:{:#?}",
                             entry.profile,
                             entry.name,
                             entry.entry_point,
-                            &cache_path.join(&entry.identity),
                             &flatten_defines(&entry.defines),
+                        );
+                        trace!(
+                            "source:[{:?}], cache:[{:?}]",
+                            &entry.entry_file,
+                            &cache_path.join(&entry.identity)
                         );
                         error_count.fetch_add(1, Ordering::SeqCst);
                     }
@@ -1172,14 +1269,24 @@ fn process() -> Result<()> {
     } else {
         let records = records.clone();
         for entry in &merkle_entries {
-            if let Err(_) = compile_glsl_to_spirv(records.clone(), &config, &cache_path, entry) {
+            if let Err(_) = compile_glsl_to_spirv(
+                records.clone(),
+                &config,
+                &cache_path,
+                active_identities.clone(),
+                entry,
+            ) {
                 error!(
-                    "Failed to compile: '{}' [{}]: entry:[{}], file:[{:?}], SPIR-V, defines:{:#?}",
+                    "Failed to compile: '{}' [{}]: entry:[{}], SPIR-V, defines:{:#?}",
                     entry.profile,
                     entry.name,
                     entry.entry_point,
-                    &cache_path.join(&entry.identity),
                     &flatten_defines(&entry.defines),
+                );
+                trace!(
+                    "source:[{:?}], cache:[{:?}]",
+                    &entry.entry_file,
+                    &cache_path.join(&entry.identity)
                 );
                 error_count.fetch_add(1, Ordering::SeqCst);
             }

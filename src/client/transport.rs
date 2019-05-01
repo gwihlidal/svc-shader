@@ -13,6 +13,7 @@ use crate::proto::service::ProcessOutput;
 use futures::future::Future;
 use futures::stream::Stream;
 use std::io::Write;
+use std::path::PathBuf;
 use tokio::executor::DefaultExecutor;
 use tower_grpc::codegen::client::http::Uri;
 use tower_grpc::Code;
@@ -56,10 +57,13 @@ impl tower_service::Service<()> for EndPoint {
     }
 }
 
-pub fn query_missing_identities(config: &Config, identities: &[String]) -> Result<Vec<String>> {
+pub fn query_missing_identities(
+    config: &Config,
+    identities: &[(PathBuf, String)],
+) -> Result<Vec<String>> {
     let query_requests: Vec<StorageIdentity> = identities
         .iter()
-        .map(|identity| StorageIdentity {
+        .map(|(_file, identity)| StorageIdentity {
             sha256_base58: identity.to_string(),
         })
         .collect();

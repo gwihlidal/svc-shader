@@ -1,7 +1,7 @@
 use crate::error::{Error, ErrorKind, Result};
 use crate::utilities::{path_exists, read_file_string};
 use failure::ResultExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ShaderEntry {
@@ -18,6 +18,7 @@ pub struct ParsedShaderEntry {
     pub name: String,
     pub profile: String,
     pub entry_point: String,
+    pub entry_file: PathBuf,
     pub identity: String,
     pub language: String,
     pub output: Vec<String>,
