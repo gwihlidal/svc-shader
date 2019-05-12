@@ -51,7 +51,7 @@ use crate::process::*;
 const VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 
 // TODO: Remove hardcoding
-static OPTIMAL_WINDOWING: bool = false;
+static OPTIMAL_WINDOWING: bool = true;
 
 #[derive(Clone, Debug)]
 struct ServiceBackend {
