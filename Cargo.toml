@@ -1,6 +1,6 @@
 [package]
 name = "svc-shader"
-version = "0.8.7"
+version = "0.8.8"
 authors = ["Graham Wihlidal <graham@wihlidal.ca>"]
 description = "A gRPC micro-service that exposes a variety of GPU shader compilers under a common cloud-based abstraction."
 homepage = "https://github.com/gwihlidal/svc-shader"
