@@ -42,9 +42,9 @@ impl<T: Hasher> io::Write for HashWriter<T> {
     }
 }
 
-/// This looks first for linker-inserted build ID / binary UUIDs (i.e.
-/// `.note.gnu.build-id` on Linux; `LC_UUID` in Mach-O; etc), falling back to
-/// hashing the whole binary.
+// This looks first for linker-inserted build ID / binary UUIDs (i.e.
+// `.note.gnu.build-id` on Linux; `LC_UUID` in Mach-O; etc), falling back to
+// hashing the whole binary.
 lazy_static! {
     pub static ref BUILD_ID: String = {
         let mut hasher = twox_hash::XxHash::with_seed(0);
