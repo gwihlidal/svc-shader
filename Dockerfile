@@ -3,7 +3,7 @@
 # https://www.wihlidal.com/blog/pipeline/2018-09-17-linux-fxc-docker/
 # https://www.wihlidal.com/blog/pipeline/2018-12-28-containerized_shader_compilers/
 
-FROM gwihlidal/docker-shader:10
+FROM gwihlidal/docker-shader:11
 
 # Prevents annoying debconf errors during builds
 ARG DEBIAN_FRONTEND="noninteractive"

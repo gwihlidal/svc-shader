@@ -24,7 +24,7 @@ spec:
             secretName: esp-service-account-creds
       containers:
       - name: svc-shader
-        image: gwihlidal/svc-shader:14
+        image: gwihlidal/svc-shader:15
         securityContext:
           privileged: true
           capabilities:
