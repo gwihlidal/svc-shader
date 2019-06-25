@@ -40,3 +40,17 @@ Note, you won't have permission to push to the `gwihlidal` namespace on Docker H
 Example of a version update:
 
 https://github.com/gwihlidal/svc-shader/commit/a845f5bffeadb76b0cb77ea4bd4525d2b58798fe
+
+## Deployment
+
+Once a new `svc-shader` image is built and pushed to the container registry, it should be deployed to Google Kubernetes Engine (GKE).
+
+Deployment can be done by executing `deploy.sh`, or running the following command:
+
+```bash
+kubectl apply -f ./svc_shader_k8s.yaml
+```
+
+You can verify the new image is running by confirming the version of the image on [GKE](https://console.cloud.google.com):
+
+![alt text](https://github.com/gwihlidal/svc-shader/blob/master/svc_shader.png "Deployed Version")
